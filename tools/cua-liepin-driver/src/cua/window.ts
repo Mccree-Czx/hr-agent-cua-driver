@@ -63,6 +63,14 @@ export async function listWindows(client: DriverClient): Promise<NativeWindow[]>
   return parseWindows(data);
 }
 
+/** Chrome 调试授权确认框标题特征(2026-09-29 联调实测:新目标调试时偶发弹出) */
+export const DEBUG_CONSENT_TITLE = /要允许远程调试吗|allow\s+remote\s+debugging/i;
+
+/** 是否 Chrome 原生调试授权确认框(此类窗口会干扰浏览器目标绑定,需先处理) */
+export function isDebugConsentPrompt(win: NativeWindow): boolean {
+  return win.title.length > 0 && DEBUG_CONSENT_TITLE.test(win.title);
+}
+
 /** 进程命令行解析(Windows:PowerShell/WMI;失败返回 null) */
 export function powershellCmdlineOf(pid: number): Promise<string | null> {
   return new Promise((resolve) => {

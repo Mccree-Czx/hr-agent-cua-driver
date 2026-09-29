@@ -5,7 +5,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DriverClient, type ToolCallResult } from "./driver-client.js";
-import { mergeSnapshotRefs, snapshot, type BrowserSession } from "./session.js";
+import { mergeSnapshotRefs, resolveChromePath, snapshot, type BrowserSession } from "./session.js";
+import type { DriverConfig } from "../config.js";
 
 const SESSION: BrowserSession = {
   targetId: "bt-1",
@@ -13,6 +14,20 @@ const SESSION: BrowserSession = {
   pageUrl: "",
   window: { pid: 1, windowId: 2, title: "t", minimized: false, isOnScreen: true },
 };
+
+test("resolveChromePath:CHROME_PATH 显式优先;未命中返回 null", () => {
+  const base: DriverConfig = {
+    bin: "cua-driver",
+    session: "t",
+    profileDir: "C:\\p",
+    windowTitleMatch: /x/,
+    callTimeoutMs: 1000,
+    chromePath: null,
+  };
+  assert.equal(resolveChromePath({ ...base, chromePath: "C:\\custom\\chrome.exe" }, () => false), "C:\\custom\\chrome.exe");
+  assert.equal(resolveChromePath(base, (p) => p.includes("Program Files\\Google")), "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe");
+  assert.equal(resolveChromePath(base, () => false), null);
+});
 
 interface ScriptEntry {
   payload: Record<string, unknown>;

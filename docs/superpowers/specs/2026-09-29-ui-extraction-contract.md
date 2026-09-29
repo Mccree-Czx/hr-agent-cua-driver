@@ -124,3 +124,26 @@ UI 输出形状:
 4. `joblist --json` → 职位行结构与 jobId 穿透。
 5. `attach-fetch --url <会话页> --out <目录> --json` → 校准附件卡片 ref 匹配与 `browser_download` 审批行为;再跑 `attach-download` 严格路径。
 6. 固化匹配器与 URL 后,更新本契约文档"待确认"项为"已验证",并提交。
+
+## 7. W5 管理类校准记录(2026-09-29,真机)
+
+### 登录/浏览器生命周期(login 命令,已验证)
+- **登录态 UI 判定**:页面同时呈现「人才推荐 + 职位管理」工作台导航 → 已登录;URL 含 /login|/signin|/passport → 未登录;安全验证特征无导航 → 风控页(提示人工过滑块并继续等待)。真机验证:`login --json` → `{"success":true,"reused":true,"state":"ok"}` exit 0。
+- **Chrome 调试授权确认框**:新调试目标偶发弹出原生框「要允许远程调试吗?」(多个共存时 `browser_prepare` 以 `browser_wrong_target_refused` 拒绝);处理:list_windows 检测标题 → get_window_state 取「允许」按钮 element_token → UIA click(已入 session.ts `dismissDebugConsentPrompts`,ensure 流程自动调用)。
+- **浏览器启动**:`launchChrome`(CHROME_PATH → 常见安装路径探测;--user-data-dir + 无 CDP 参数,detached 不阻塞 CLI);找不到窗口且允许启动时轮询等待 30s。
+
+### joblist(已验证)
+- 默认页 `https://lpt.liepin.com/job/manager`;行=可点击职位名 link;点击行 → `job/detail/preview?ejob_id=xxx`(**jobId 获取路径,已验证**);`--capture-ids --ref` 穿透,`--id-param` 默认 ejob_id。真机:`joblist --json` exit 0,71 行。
+
+### jobpublish(部分校准,输入机制已验证)
+- 表单页 URL 直达:`https://lpt.liepin.com/job/publish?ejobActionType=publish`;
+- **职位名称输入框 = 快照中首个「role=combobox + actions含type」(in_viewport 优先)**;空值时在 semantic 快照中不可见,有值后暴露;`browser_type(replace:true)` 写中文实测成功(写入+清空复原);
+- **「保 存」(含全角空格)/「发布职位」按钮** role=button,offscreen 可直接点击(实测触发校验);
+- **校验反馈**:保存触发页面提示(实测「请选择所属部门」),以 statictext 呈现,正则 `/(请选择|请填|不能为空|必填|请输入)/` 可捕获;
+- **UIA 补充(get_window_state)**:职位名称在 UIA 中为 ComboBox label=ejobTitle;表单还有 CheckBox(允许学生投递/统招/语言/海外经历/发布为保密职位/协议已勾选 selected:true)等;
+- **未完成校准**:职位类别三级联动、职位描述富文本、薪资/经验/学历选择、城市/地址、提交流程全链路 → v1 输出 unvalidated_fields 明示。
+
+### jobdelete(部分校准,安全闸已生效)
+- 勾选:仅「全选」可定位(semantic 中列表区**最后一个可点击 labeltext**;UIA CheckBox label=全选);**单行 checkbox 无语义节点** → 多职位无法精确勾选;
+- 勾选后批量条「刷新/结束」由 disabled(actions=[]) 变 enabled(actions 含 click);**批量条无独立「删除」** → 删除入口疑在"已关闭"页签(待校准);
+- v1 安全策略:仅当「目标职位=列表全部可见行」才执行 全选→结束;否则 need_manual;`--confirm-destructive` 二次确认闸;完成后输出 `deletion_pending:true`(不谎报);真机 dry-run exit 0 ✓。

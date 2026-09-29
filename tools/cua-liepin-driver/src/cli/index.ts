@@ -10,6 +10,8 @@ import { loadConfigFromEnv } from "../config.js";
 import { exitCodeOf, truncate } from "../contract.js";
 import { doctor } from "../commands/doctor.js";
 import { isPendingCommand } from "../commands/registry.js";
+import { handleLogin } from "../commands/login.js";
+import { handleJobdelete, handleJobpublish } from "../commands/jobs.js";
 import { handleGreet, handleRequestResume, handleSendMessage } from "../commands/outbound.js";
 import {
   handleChatMsg,
@@ -31,6 +33,7 @@ function printHelp(): void {
 
 已实现命令:
   doctor                                          环境自检(--attach 附加+快照冒烟;--json 输出 JSON)
+  login [--timeout <秒>] [--force]                登录检测/等待扫码(登录态有效时直接复用;--json)
   greet <resume_id> --ejobId <id>                 打招呼(--jobTitle 职位标题;--message 话术;
                                                    --dry-run 只定位不执行;--allow-unverified)
   request-resume <resume_id> [--imId <对方会话>]  索要简历(--dry-run/--allow-unverified)
@@ -41,12 +44,19 @@ function printHelp(): void {
   search --url <页面>                             人才搜索页抽取(--url 待联调确认)
   chatlist --url <页面>                           沟通列表页抽取(--url 待联调确认)
   chatmsg --url <会话页> [--imId <对方会话>]      会话消息读取(附件卡片迹象检测)
-  joblist --url <页面>                            职位列表页抽取(--url 待联调确认)
+  joblist [--url <页面>] [--capture-ids --ref <pN:M> ...]  职位列表页抽取(默认 /job/manager)
+        点击穿透取 ejob_id(--id-param 默认 ejob_id)
   attach-fetch --url <会话页> --out <目录>        附件检出+下载(三态输出;--imId 留痕;--dry-run)
   attach-download --url <会话页> --out <目录>     附件下载(任一失败非零退出)
 
-计划内命令(W5+ 落地,当前为占位应答):
-  login/jobpublish/jobdelete
+W5 管理类命令(部分校准):
+  jobpublish --data <JSON> [--draft-only]         发布职位(UI 表单:填写+保存/发布+校验反馈;
+                                                  字段支持范围见输出 unvalidated_fields)
+  jobdelete --job <id[,id..]>                     删除职位(安全闸:--confirm-destructive;
+                                                  穿透匹配 ejob_id → 全选 → 结束;删除入口待校准)
+
+计划内命令(W5+ 续,当前为占位应答):
+  (jobpublish/jobdelete 已实现 v1;搜索引擎等扩展项待评估)
 
 公共选项: --json(JSON 输出,步骤日志走 stderr)
 外部辅助: help | --version
@@ -83,6 +93,22 @@ async function main(argv: string[]): Promise<number> {
       console.log(JSON.stringify(report, null, 2));
     }
     return code;
+  }
+
+  // W5 登录与浏览器生命周期
+  if (command === "login") {
+    const cfg = loadConfigFromEnv();
+    return handleLogin(cfg, args);
+  }
+
+  // W5 管理类命令(职位发布/删除)
+  if (command === "jobpublish") {
+    const cfg = loadConfigFromEnv();
+    return handleJobpublish(cfg, args);
+  }
+  if (command === "jobdelete") {
+    const cfg = loadConfigFromEnv();
+    return handleJobdelete(cfg, args);
   }
 
   // W2 外发类命令(UI 通道)

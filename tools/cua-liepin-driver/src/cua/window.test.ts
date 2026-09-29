@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseWindows, pickBrowserWindow, pickChromeWindow, type NativeWindow } from "./window.js";
+import { isDebugConsentPrompt, parseWindows, pickBrowserWindow, pickChromeWindow, type NativeWindow } from "./window.js";
 
 const TITLE_MATCH = /猎聘|liepin/i;
 
@@ -97,4 +97,11 @@ test("pickBrowserWindow:未配置 profile 时直接走标题匹配", async () =>
   const windows = [win({ pid: 31, windowId: 7, title: "推荐人才 - Google Chrome" })];
   const picked = await pickBrowserWindow(windows, TITLE_MATCH, { profileDir: null });
   assert.equal(picked, null, "标题不含 猎聘/liepin 时不命中");
+});
+
+test("isDebugConsentPrompt:识别 Chrome 调试授权确认框(中英文)", () => {
+  assert.equal(isDebugConsentPrompt(win({ title: "要允许远程调试吗?" })), true);
+  assert.equal(isDebugConsentPrompt(win({ title: "Allow remote debugging?" })), true);
+  assert.equal(isDebugConsentPrompt(win({ title: "职位管理 - Google Chrome" })), false);
+  assert.equal(isDebugConsentPrompt(win({ title: "" })), false);
 });

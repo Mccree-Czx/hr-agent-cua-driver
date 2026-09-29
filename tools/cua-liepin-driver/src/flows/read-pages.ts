@@ -106,24 +106,45 @@ export interface RecommendInput {
   dryRun: boolean;
 }
 
-/** 推荐列表页抽取(+ 可选 ID 穿透) */
-export async function runReadRecommend(ctx: UiContext, input: RecommendInput): Promise<RawPageOutcome> {
-  const steps: string[] = [];
-  const url = input.pageUrl ?? "https://lpt.liepin.com/recommend";
-  if (input.jobId !== undefined && input.jobId !== "") {
-    steps.push(`jobId=${input.jobId}(岗位上下文参数待联调确认,当前按页面默认呈现)`);
-  }
-  const { lines } = await readPage(ctx, url);
-  steps.push(`列表页文本行 ${lines.length}`);
+/** 列表页通用抽取输入(recommend/joblist 复用) */
+export interface ReadListInput {
+  pageUrl: string;
+  captureRefs: string[];
+  idParam: string;
+  dryRun: boolean;
+  /** 日志称谓(如"推荐列表页"/"职位列表页") */
+  label: string;
+}
 
+/** 列表页通用抽取(+ 可选 ID 穿透;穿透含 URL 参数与预览层「简历编号」双通道) */
+export async function runReadList(ctx: UiContext, input: ReadListInput): Promise<RawPageOutcome> {
+  const steps: string[] = [];
+  const { lines } = await readPage(ctx, input.pageUrl);
+  steps.push(`${input.label}文本行 ${lines.length}`);
   const captures = input.captureRefs.length > 0
-    ? await captureIdsByClickThrough(ctx, input.captureRefs, url, input.idParam ?? "resIdEncode", input.dryRun)
+    ? await captureIdsByClickThrough(ctx, input.captureRefs, input.pageUrl, input.idParam, input.dryRun)
     : [];
   if (captures.length > 0) {
     const hit = captures.filter((c) => c.id !== null).length;
     steps.push(`穿透 ${captures.length} 个,解析到 ID ${hit} 个`);
   }
-  return { page_url: url, count: lines.length, lines, extraction_status: "unvalidated", captures, steps };
+  return { page_url: input.pageUrl, count: lines.length, lines, extraction_status: "unvalidated", captures, steps };
+}
+
+/** 推荐列表页抽取(+ 可选 ID 穿透) */
+export async function runReadRecommend(ctx: UiContext, input: RecommendInput): Promise<RawPageOutcome> {
+  const url = input.pageUrl ?? "https://lpt.liepin.com/recommend";
+  const outcome = await runReadList(ctx, {
+    pageUrl: url,
+    captureRefs: input.captureRefs,
+    idParam: input.idParam ?? "resIdEncode",
+    dryRun: input.dryRun,
+    label: "列表页",
+  });
+  if (input.jobId !== undefined && input.jobId !== "") {
+    outcome.steps.unshift(`jobId=${input.jobId}(岗位上下文参数待联调确认,当前按页面默认呈现)`);
+  }
+  return outcome;
 }
 
 export interface ChatMsgInput {

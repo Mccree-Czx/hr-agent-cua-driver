@@ -10,6 +10,7 @@ import type { DriverConfig } from "../config.js";
 import { flagValue, type ParsedArgs } from "../cli/args.js";
 import {
   runReadChatMsg,
+  runReadList,
   runReadPageGeneric,
   runReadRecommend,
   type RawPageOutcome,
@@ -95,13 +96,21 @@ export async function handleChatMsg(cfg: DriverConfig, args: ParsedArgs): Promis
   });
 }
 
-/** joblist --url <页面> [--json] */
+/**
+ * joblist [--url <页面>] [--capture-ids --ref <pN:M> ...] [--id-param ejob_id] [--dry-run] [--json]
+ * 默认页 https://lpt.liepin.com/job/manager(2026-09-29 联调验证);
+ * 穿透:点击职位行 → 详情页 URL 的 ejob_id 参数(已验证)。
+ */
 export async function handleJoblist(cfg: DriverConfig, args: ParsedArgs): Promise<number> {
-  const url = requireUrl(args, "joblist", "职位管理列表页");
-  if (url === null) {
+  const url = (flagValue(args, "url") ?? "https://lpt.liepin.com/job/manager").trim();
+  const idParam = flagValue(args, "id-param") ?? "ejob_id";
+  const captureRefs = args.flags["capture-ids"] === true ? (args.multi.ref ?? []) : [];
+  const dryRun = args.flags["dry-run"] === true;
+  if (args.flags["capture-ids"] === true && captureRefs.length === 0) {
+    console.error("joblist:--capture-ids 需要至少一个 --ref <pN:M>(联调期原语)");
     return 1;
   }
   return withContext(cfg, args, async (ctx) => {
-    printRaw(await runReadPageGeneric(ctx, url, "职位列表页"));
+    printRaw(await runReadList(ctx, { pageUrl: url, captureRefs, idParam, dryRun, label: "职位列表页" }));
   });
 }

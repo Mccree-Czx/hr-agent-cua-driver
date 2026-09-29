@@ -9,10 +9,18 @@
  * - 点击默认 trusted 路由(真实输入事件、后台投递不抢焦点),拒绝则抛出以便上层决策。
  */
 
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { CuaError } from "../contract.js";
 import type { DriverConfig } from "../config.js";
 import type { DriverClient } from "./driver-client.js";
-import { listWindows, pickBrowserWindow, powershellCmdlineOf, type NativeWindow } from "./window.js";
+import {
+  isDebugConsentPrompt,
+  listWindows,
+  pickBrowserWindow,
+  powershellCmdlineOf,
+  type NativeWindow,
+} from "./window.js";
 
 export interface BrowserSession {
   targetId: string;
@@ -99,6 +107,120 @@ export async function attachBrowserSession(
     pageUrl: typeof active.url === "string" ? active.url : "",
     window,
   };
+}
+
+/** Chrome 可执行文件探测(CHROME_PATH → 常见安装路径);未找到返回 null */
+export function resolveChromePath(cfg: DriverConfig, exists: (p: string) => boolean = existsSync): string | null {
+  if (cfg.chromePath !== null && cfg.chromePath !== "") {
+    return cfg.chromePath;
+  }
+  const local = process.env.LOCALAPPDATA ?? "";
+  const candidates = [
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+    local !== "" ? `${local}\\Google\\Chrome\\Application\\chrome.exe` : "",
+  ].filter((p) => p !== "");
+  for (const c of candidates) {
+    if (exists(c)) {
+      return c;
+    }
+  }
+  return null;
+}
+
+/**
+ * 启动账号 Chrome(detached,不阻塞 CLI 退出)。
+ * 终态约束:无 CDP 参数(--remote-debugging-port 已退出运行路径),仅账号 profile + 常规参数。
+ */
+export function launchChrome(cfg: DriverConfig, initialUrl = "https://lpt.liepin.com/"): number {
+  if (cfg.profileDir === null || cfg.profileDir === "") {
+    throw new CuaError("failed", "未配置 LIEPIN_USER_DATA_DIR,无法启动账号浏览器");
+  }
+  const bin = resolveChromePath(cfg);
+  if (bin === null) {
+    throw new CuaError("failed", "未找到 Chrome 可执行文件(可用 CHROME_PATH 显式指定)");
+  }
+  const child = spawn(
+    bin,
+    [
+      `--user-data-dir=${cfg.profileDir}`,
+      "--no-first-run",
+      "--no-default-browser-check",
+      initialUrl,
+    ],
+    { detached: true, stdio: "ignore" },
+  );
+  child.unref();
+  return child.pid ?? 0;
+}
+
+/**
+ * 处理 Chrome 调试授权确认框(点「允许」)。
+ * 2026-09-29 联调实测:新调试目标偶发弹出"要允许远程调试吗?"原生框,
+ * 多个共存时 browser_prepare 会以 browser_wrong_target_refused 拒绝,必须先清障。
+ * 返回处理数;单框失败不阻断(下一次轮询会重试)。
+ */
+export async function dismissDebugConsentPrompts(client: DriverClient): Promise<number> {
+  const windows = await listWindows(client);
+  const prompts = windows.filter(isDebugConsentPrompt);
+  let handled = 0;
+  for (const p of prompts) {
+    try {
+      const state = await client.requireOk("get_window_state", { pid: p.pid, window_id: p.windowId });
+      const elements = (Array.isArray(state.elements) ? state.elements : []) as Array<Record<string, unknown>>;
+      const allow = elements.find(
+        (e) => typeof e.label === "string" && /^允许$/.test(e.label) && typeof e.element_token === "string",
+      );
+      if (allow === undefined) {
+        continue;
+      }
+      const res = await client.callTool("click", {
+        pid: p.pid,
+        window_id: p.windowId,
+        element_token: allow.element_token,
+      });
+      if (res.status !== "refused") {
+        handled++;
+      }
+    } catch {
+      /* 单框处理失败不阻断 */
+    }
+  }
+  return handled;
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * 附加浏览器会话(含生命周期):
+ * 1) 先清 consent 干扰窗;
+ * 2) attach;失败且允许启动时:启动账号 Chrome → 轮询等待窗口就绪(默认 30s)。
+ */
+export async function ensureBrowserSession(
+  client: DriverClient,
+  cfg: DriverConfig,
+  opts: { launchIfMissing?: boolean; waitMs?: number } = {},
+): Promise<BrowserSession> {
+  await dismissDebugConsentPrompts(client).catch(() => 0);
+  try {
+    return await attachBrowserSession(client, cfg);
+  } catch (err) {
+    if (opts.launchIfMissing !== true) {
+      throw err;
+    }
+    launchChrome(cfg);
+    const deadline = Date.now() + (opts.waitMs ?? 30_000);
+    while (Date.now() < deadline) {
+      await sleep(2_000);
+      try {
+        await dismissDebugConsentPrompts(client).catch(() => 0);
+        return await attachBrowserSession(client, cfg);
+      } catch {
+        /* 窗口未就绪,继续等待 */
+      }
+    }
+    throw new CuaError("failed", "启动账号 Chrome 后等待窗口就绪超时");
+  }
 }
 
 /**
