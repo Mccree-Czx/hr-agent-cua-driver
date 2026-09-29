@@ -23,7 +23,17 @@ const isRegex = name.startsWith("re:");
 const finder = isRegex
   ? (n) => new RegExp(name.slice(3)).test(n)
   : (n) => n.includes(name);
-const hit = before.refs.find((r) => r.name !== null && finder(r.name));
+// 2026-09-29 联调教训:容器节点(role=generic)的聚合名里常含有目标文案,
+// 直接 includes 会误点容器;策略:优先 button/link + 名称以目标结尾 + 排除超长名
+const candidates = before.refs.filter((r) => r.name !== null && r.name.length <= 40 && finder(r.name));
+const score = (r) => {
+  let s = 0;
+  if (r.role === "button" || r.role === "link") s += 4;
+  if (isRegex ? new RegExp(name.slice(3) + "$").test(r.name ?? "") : (r.name ?? "").endsWith(name)) s += 2;
+  if (r.actions.includes("click")) s += 1;
+  return s;
+};
+const hit = candidates.sort((a, b) => score(b) - score(a))[0];
 if (hit === undefined) {
   console.log(`未找到名称包含「${name}」的可访问节点(${before.refs.length} 个节点)`);
   process.exit(1);

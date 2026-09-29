@@ -46,8 +46,18 @@ export const ALREADY_CHAT_MATCHER: NameMatcher = {
   actions: ["click"],
 };
 
-/** 打招呼成功证据候选 */
-export const GREET_EVIDENCE = ["继续沟通", "沟通中", "已打招呼", "打招呼成功", "已发起沟通", "沟通成功"];
+/**
+ * 打招呼成功证据候选。
+ * 联调实测(2026-09-29):真实 UI 路径为推荐页/预览「立即沟通」→
+ * 弹出「已向候选人发送消息」弹窗 + 按钮变为「继续沟通」。
+ */
+export const GREET_EVIDENCE = ["已向候选人发送消息", "继续沟通", "沟通中", "已打招呼", "打招呼成功", "已发起沟通", "沟通成功"];
+
+/** 成功弹窗的关闭按钮(弹窗带超级聊聊推广,只点关闭、不点推广) */
+export const GREET_DIALOG_DISMISS: NameMatcher = {
+  names: ["关闭"],
+  roles: ["button"],
+};
 
 /** 职位选择弹窗标志(出现任一即视为弹窗在场) */
 export const JOB_DIALOG_MARKERS = ["选择职位", "选择沟通职位", "开聊职位", "请选择职位", "沟通职位"];
@@ -130,6 +140,13 @@ export async function runGreet(ctx: UiContext, input: GreetInput): Promise<Greet
       if (ev !== null) {
         evidence = findAnyText(ev, GREET_EVIDENCE) ?? "";
         note(`成功证据: ${evidence}`);
+        // 联调实测:成功弹窗「已向候选人发送消息」会遮挡后续操作,顺手关闭(仅点关闭,不碰推广按钮)
+        if (evidence === "已向候选人发送消息") {
+          const dismissed = await clickName(ctx, "关闭成功弹窗", GREET_DIALOG_DISMISS, { timeoutMs: 2_500 });
+          if (dismissed !== null) {
+            note("已关闭成功提示弹窗");
+          }
+        }
       } else if (input.allowUnverified !== true) {
         throw new CuaError("failed", "打招呼动作已执行,但未观察到成功证据;确认界面变化后可传 --allow-unverified(联调期)");
       } else {

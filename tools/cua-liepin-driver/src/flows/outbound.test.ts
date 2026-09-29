@@ -225,8 +225,30 @@ test("greet 已存在会话:跳过打招呼(继续沟通在场)", async () => {
   assert.equal(s.tools().includes("browser_click"), false);
 });
 
-// ---------- request-resume ----------
+test("greet 真实成功弹窗(已向候选人发送消息):自动点关闭不碰推广", async () => {
+  const s = new Scenario();
+  s.nav()
+    .snap([{ name: "打招呼", ref: "p1:1" }]) // 导航检查
+    .snap([{ name: "打招呼", ref: "p2:1" }]) // 页面就绪
+    .snap([{ name: "打招呼", ref: "p3:1" }]) // 定位
+    .click()
+    .snap([{ name: "工作经历", role: "statictext", actions: [] }]) // 无职位弹窗
+    .snap([{ name: "已向候选人发送消息", ref: "p5:9" }]) // 成功证据(弹窗在场)
+    .snap([
+      { name: "关闭", role: "button", actions: ["click"], ref: "p6:10" },
+      { name: "免费发起", role: "button", actions: ["click"], ref: "p6:11" },
+    ]) // 弹窗按钮
+    .click(); // 关闭弹窗
 
+  const { ctx } = makeCtx(s);
+  const outcome = await runGreet(ctx, { usercId: "r-1001", ejobId: "42" });
+
+  assert.equal(outcome.evidence, "已向候选人发送消息");
+  const clicks = s.calls.filter((c) => c.tool === "browser_click").map((c) => c.args.ref);
+  assert.deepEqual(clicks, ["p3:1", "p6:10"], "只应关闭弹窗,不得点击推广按钮");
+});
+
+// ---------- request-resume ----------
 function scriptOpenIm(s: Scenario): Scenario {
   return s
     .snap([{ name: "工作经历", role: "statictext", actions: [] }]) // IM 前置检查(输入框不在)

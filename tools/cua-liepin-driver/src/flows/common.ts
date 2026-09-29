@@ -31,11 +31,14 @@ export const IM_TEXTBOX_MATCHER: NameMatcher = {
   actions: ["type"],
 };
 
-/** IM 发送按钮候选 */
+/**
+ * IM 发送按钮候选。
+ * 联调实测(2026-09-29):发送按钮在输入前为 disabled 且无 click action 属性,
+ * 因此不得限定 actions(输入后变为可点)。
+ */
 export const IM_SEND_MATCHER: NameMatcher = {
   names: ["发送"],
   roles: ["button"],
-  actions: ["click"],
   excludeNames: ["发送消息"],
 };
 
