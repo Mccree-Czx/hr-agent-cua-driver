@@ -189,3 +189,9 @@ UI 输出形状:
 - ResumeCollectService.checkReply:name 回退(仅 userId/imId 均空时生效,避免重名误判);
 - 测试:后端 309/309 全绿(+3:name 键命中 known 链/同名歧义跳过/双空跳过)。
 - **剩余信号缺口(切换前必补)**:ChatPollService 的 direction 与 oppositeRead 依赖 legacy 会话元数据;UI chatlist records 尚无这两个字段。direction(对方最后发言)与会话级已读的 UI 判定需 chatmsg 消息结构化 + 真机校准后补入 records。
+
+### search 预研(2026-09-29,离线)
+- 后端消费字段(SearchTaskService):name / resume_id / url / talentId(url 提取);
+- legacy 输出:resName / resIdEncode / usercId / resumeUrl;
+- **UI 实现路径**:搜索页与推荐页同为人才卡片,`extractCandidateRecords` 可复用(name/raw_text/期望字段);resume_id 走预览层「简历编号」穿透(同 recommend --with-ids);talentId 从穿透后 url 提取;
+- 待解锁:校准 /search 页面卡片结构(尤其姓名节点规则是否与推荐页一致)→ 接线 recordsExtractor → 后端双通道归一。
