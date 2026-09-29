@@ -26,8 +26,8 @@ function makeLogger(json: boolean): (msg: string) => void {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** 建立 UI 上下文(附加/绑定猎聘 Chrome 窗口) */
-async function withContext(
+/** 建立 UI 上下文(附加/绑定猎聘 Chrome 窗口);读类命令处理复用 */
+export async function withContext(
   cfg: DriverConfig,
   args: ParsedArgs,
   run: (ctx: UiContext) => Promise<void>,

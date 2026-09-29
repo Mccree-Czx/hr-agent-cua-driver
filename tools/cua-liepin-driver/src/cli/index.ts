@@ -11,6 +11,14 @@ import { exitCodeOf, truncate } from "../contract.js";
 import { doctor } from "../commands/doctor.js";
 import { isPendingCommand } from "../commands/registry.js";
 import { handleGreet, handleRequestResume, handleSendMessage } from "../commands/outbound.js";
+import {
+  handleChatMsg,
+  handleChatlist,
+  handleJoblist,
+  handleRecommend,
+  handleResume,
+  handleSearch,
+} from "../commands/reads.js";
 import { parseArgs } from "./args.js";
 
 const VERSION = "0.1.0";
@@ -26,9 +34,16 @@ function printHelp(): void {
                                                    --dry-run 只定位不执行;--allow-unverified)
   request-resume <resume_id> [--imId <对方会话>]  索要简历(--dry-run/--allow-unverified)
   send-message <resume_id> --text <消息>          向已建会话发送消息(--dry-run)
+  resume <resume_id>                              在线简历详情读取(want_title + raw_text)
+  recommend [--jobId <id>] [--url <页面>]         推荐列表页抽取;--capture-ids --ref <pN:M>...
+                                                   点击穿透取 resume_id(联调原语,--dry-run 抑制点击)
+  search --url <页面>                             人才搜索页抽取(--url 待联调确认)
+  chatlist --url <页面>                           沟通列表页抽取(--url 待联调确认)
+  chatmsg --url <会话页> [--imId <对方会话>]      会话消息读取(附件卡片迹象检测)
+  joblist --url <页面>                            职位列表页抽取(--url 待联调确认)
 
-计划内命令(W3+ 落地,当前为占位应答):
-  login/chatlist/chatmsg/recommend/resume/search/joblist/attach-fetch/attach-download/jobpublish/jobdelete
+计划内命令(W4+ 落地,当前为占位应答):
+  login/attach-fetch/attach-download/jobpublish/jobdelete
 
 公共选项: --json(JSON 输出,步骤日志走 stderr)
 外部辅助: help | --version
@@ -79,8 +94,28 @@ async function main(argv: string[]): Promise<number> {
     return handleSendMessage(cfg, args);
   }
 
+  // W3 读类命令(UI 读取抽取)
+  if (command === "resume" || command === "recommend" || command === "search"
+      || command === "chatlist" || command === "chatmsg" || command === "joblist") {
+    const cfg = loadConfigFromEnv();
+    switch (command) {
+      case "resume":
+        return handleResume(cfg, args);
+      case "recommend":
+        return handleRecommend(cfg, args);
+      case "search":
+        return handleSearch(cfg, args);
+      case "chatlist":
+        return handleChatlist(cfg, args);
+      case "chatmsg":
+        return handleChatMsg(cfg, args);
+      default:
+        return handleJoblist(cfg, args);
+    }
+  }
+
   if (isPendingCommand(command)) {
-    console.error(`${command}: 未实现(按全量替换计划在 W3+ 落地)`);
+    console.error(`${command}: 未实现(按全量替换计划在 W4+ 落地)`);
     return 1;
   }
 
