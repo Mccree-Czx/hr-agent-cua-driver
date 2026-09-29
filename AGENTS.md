@@ -32,6 +32,7 @@ This file provides guidance to Qoder (qoder.com) when working with code in this 
 - 修改该目录后必须执行 `npm run build` 与 `npm test`,并在 `backend/` 执行 `mvn test` 确保全部测试通过。
 - 守护进程必须以 `cua-driver serve --grant existing-profile` 启动,否则 existing-profile 附加会被拒绝(`browser_consent_required`)。
 - 输出契约与 liepin-cli 一致(退出码 0/1/2/3);注意 `cua-driver call` 的结构化拒绝也是 exit 0,必须解析 JSON `status` 字段。
+- UI 通道要求 Windows 会话保持解锁登录:锁屏下 Chrome 内容区渲染冻结(快照只剩导航骨架),驱动会以"桌面已锁定(desktop_unlocked=false)"快速失败——联调/无人值守部署前请解锁。
 - 真机验证沿用 liepin-cli 纪律:仅限临时测试职位/约定测试人选,不发消息、不打招呼。
 
 ## 交付流程
