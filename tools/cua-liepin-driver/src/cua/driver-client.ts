@@ -8,6 +8,8 @@
  * - 结构化拒绝(refusal)返回 JSON 且 exit code = 0,必须解析 status/refusal 字段;
  * - 输出形状未完全统一:浏览器类工具带 status(ok/refused);非浏览器类工具(如 list_windows)
  *   成功时无 status 字段;browser_click 拒绝还有 effect="refused"+error.code 形状——逐一兼容;
+ * - session 标签有生命周期:过期/结束后普通动作会被拒绝("session has ended"),
+ *   必须显式 start_session 复活(本客户端自动完成并重试一次,2026-09-29 实测);
  * - exit code 非 0 仅表示用法/进程级失败。
  */
 
@@ -43,6 +45,14 @@ export class DriverClient {
 
   /** 调用一个 cua-driver 工具;拒绝不抛错,由调用方决定语义 */
   async callTool(tool: string, args: Record<string, unknown>): Promise<ToolCallResult> {
+    return this.callToolInternal(tool, args, false);
+  }
+
+  private async callToolInternal(
+    tool: string,
+    args: Record<string, unknown>,
+    retriedAfterRevive: boolean,
+  ): Promise<ToolCallResult> {
     const payload = JSON.stringify({ ...args, session: this.opts.session });
     const res = await this.runner(this.opts.bin, ["call", tool], {
       stdin: payload,
@@ -53,6 +63,15 @@ export class DriverClient {
       throw new CuaError("failed", `cua-driver call ${tool} 超时(${this.opts.timeoutMs}ms)`);
     }
     if (res.code !== 0) {
+      // session 生命周期:结束后普通动作被拒(实测文案 "session has ended ... was rejected");
+      // 显式 start_session 复活后重试一次(幂等,官方语义:ordinary actions never revive ended names)
+      const output = res.stderr + res.stdout;
+      if (!retriedAfterRevive && /session has ended/i.test(output)) {
+        const revived = await this.reviveSession();
+        if (revived) {
+          return this.callToolInternal(tool, args, true);
+        }
+      }
       throw new CuaError(
         "failed",
         `cua-driver call ${tool} 非零退出 code=${res.code}: ${truncate(res.stderr || res.stdout)}`,
@@ -111,6 +130,19 @@ export class DriverClient {
       );
     }
     return result.data;
+  }
+
+  /** 复活已结束的公共会话标签(start_session 幂等);成功返回 true */
+  private async reviveSession(): Promise<boolean> {
+    try {
+      const res = await this.runner(this.opts.bin, ["call", "start_session"], {
+        stdin: JSON.stringify({ session: this.opts.session }),
+        timeoutMs: this.opts.timeoutMs,
+      });
+      return !res.timedOut && res.code === 0;
+    } catch {
+      return false;
+    }
   }
 
   /** cua-driver 版本(`--version`) */

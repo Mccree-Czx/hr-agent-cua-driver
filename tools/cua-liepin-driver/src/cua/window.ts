@@ -40,13 +40,19 @@ export function parseWindows(data: Record<string, unknown>): NativeWindow[] {
 }
 
 /**
- * 挑选猎聘 Chrome 窗口:标题匹配 + 未最小化 + 在屏。
- * 多命中时取 windowId 最小者(稳定选择,便于跨调用一致)。
+ * 挑选猎聘 Chrome 窗口:标题匹配为前提;首选可见(未最小化且在屏),兜底接受最小化窗口
+ * (2026-09-29 实测:自动化窗口常被最小化,CDP 驱动并不要求窗口可见;
+ * 仅前台升级类动作在最小化时可能不可用,由动作层自行按结构化拒绝处理)。
+ * 同级多命中时取 windowId 最小者(稳定选择,便于跨调用一致)。
  */
 export function pickChromeWindow(windows: NativeWindow[], titleMatch: RegExp): NativeWindow | null {
   const matches = windows
-    .filter((w) => w.title.length > 0 && titleMatch.test(w.title) && !w.minimized && w.isOnScreen)
+    .filter((w) => w.title.length > 0 && titleMatch.test(w.title))
     .sort((a, b) => a.windowId - b.windowId);
+  const visible = matches.find((w) => !w.minimized && w.isOnScreen);
+  if (visible !== undefined) {
+    return visible;
+  }
   return matches.length > 0 ? matches[0] : null;
 }
 

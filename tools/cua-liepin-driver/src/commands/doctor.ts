@@ -11,7 +11,7 @@
 import type { DriverConfig } from "../config.js";
 import { DriverClient } from "../cua/driver-client.js";
 import { attachBrowserSession, snapshot } from "../cua/session.js";
-import { listWindows } from "../cua/window.js";
+import { listWindows, pickChromeWindow } from "../cua/window.js";
 import { EXIT_OK, truncate } from "../contract.js";
 
 export interface DoctorReport {
@@ -51,9 +51,7 @@ export async function doctor(
 
   try {
     const windows = await listWindows(client);
-    const found = windows.find(
-      (w) => !w.minimized && w.isOnScreen && w.title.length > 0 && cfg.windowTitleMatch.test(w.title),
-    );
+    const found = pickChromeWindow(windows, cfg.windowTitleMatch);
     report.chromeWindow = found
       ? { pid: found.pid, windowId: found.windowId, title: found.title }
       : null;

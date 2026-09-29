@@ -6,6 +6,8 @@ import com.hragent.executor.AccountLocks;
 import com.hragent.executor.CliException;
 import com.hragent.executor.CliResult;
 import com.hragent.executor.CliSpawnCounter;
+import com.hragent.executor.CuaCommandResolver;
+import com.hragent.executor.CuaDriverExecutor;
 import com.hragent.executor.LiepinCliExecutor;
 import com.hragent.notify.NotifyService;
 import com.hragent.repository.LiepinAccountMapper;
@@ -53,7 +55,9 @@ class LiepinCommandServiceRiskTest {
         executor = spy(new LiepinCliExecutor(properties, new AccountLocks(), new CliSpawnCounter()));
         accounts = mock(LiepinAccountMapper.class);
         notify = mock(NotifyService.class);
-        service = new LiepinCommandService(executor, accounts, notify, guard);
+        service = new LiepinCommandService(executor, accounts, notify, guard,
+                new CuaDriverExecutor(new AccountLocks(), new CliSpawnCounter(), properties),
+                new CuaCommandResolver(properties));
 
         account = new LiepinAccount();
         account.setId(1L);

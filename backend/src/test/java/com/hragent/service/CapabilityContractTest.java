@@ -3,7 +3,11 @@ package com.hragent.service;
 import com.hragent.common.BizException;
 import com.hragent.config.HrAgentProperties;
 import com.hragent.entity.*;
+import com.hragent.executor.AccountLocks;
 import com.hragent.executor.CliResult;
+import com.hragent.executor.CliSpawnCounter;
+import com.hragent.executor.CuaCommandResolver;
+import com.hragent.executor.CuaDriverExecutor;
 import com.hragent.executor.LiepinCliExecutor;
 import com.hragent.notify.NotifyService;
 import com.hragent.repository.*;
@@ -30,7 +34,9 @@ class CapabilityContractTest {
     private final NotifyService notify = mock(NotifyService.class);
     private final HrAgentProperties props = new HrAgentProperties();
     private final RiskSuspectGuard guard = new RiskSuspectGuard(props);
-    private final LiepinCommandService commands = new LiepinCommandService(executor, accounts, notify, guard);
+    private final LiepinCommandService commands = new LiepinCommandService(executor, accounts, notify, guard,
+            new CuaDriverExecutor(new AccountLocks(), new CliSpawnCounter(), props),
+            new CuaCommandResolver(props));
     private final SearchTaskService search = new SearchTaskService(tasks, jobs, accounts, candidates,
             commands, queue, props, notify, guard);
     private final ResumeCollectService collect = new ResumeCollectService(greetings, candidates, accounts,

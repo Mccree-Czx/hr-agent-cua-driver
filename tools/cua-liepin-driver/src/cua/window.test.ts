@@ -52,6 +52,14 @@ test("pickChromeWindow:标题匹配 + 未最小化 + 在屏", () => {
   assert.equal(picked?.windowId, 4);
 });
 
+test("pickChromeWindow:全部候选均最小化时兜底返回(CDP 驱动不要求窗口可见)", () => {
+  const picked = pickChromeWindow(
+    [win({ windowId: 7, minimized: true, isOnScreen: false }), win({ windowId: 3, minimized: true, isOnScreen: false })],
+    TITLE_MATCH,
+  );
+  assert.equal(picked?.windowId, 3);
+});
+
 test("pickChromeWindow:无匹配返回 null", () => {
   assert.equal(pickChromeWindow([win({ title: "设置" })], TITLE_MATCH), null);
   assert.equal(pickChromeWindow([], TITLE_MATCH), null);

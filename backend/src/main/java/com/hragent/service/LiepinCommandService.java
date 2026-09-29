@@ -5,6 +5,8 @@ import com.hragent.common.BizException;
 import com.hragent.entity.LiepinAccount;
 import com.hragent.executor.CliException;
 import com.hragent.executor.CliResult;
+import com.hragent.executor.CuaCommandResolver;
+import com.hragent.executor.CuaDriverExecutor;
 import com.hragent.executor.JsonExtractor;
 import com.hragent.executor.LiepinCliExecutor;
 import com.hragent.notify.NotifyService;
@@ -29,16 +31,21 @@ import java.util.Optional;
 public class LiepinCommandService {
 
     private final LiepinCliExecutor executor;
+    private final CuaDriverExecutor cuaDriverExecutor;
+    private final CuaCommandResolver cuaCommandResolver;
     private final LiepinAccountMapper accountMapper;
     private final NotifyService notifyService;
     private final RiskSuspectGuard riskSuspectGuard;
 
     public LiepinCommandService(LiepinCliExecutor executor, LiepinAccountMapper accountMapper,
-                                NotifyService notifyService, RiskSuspectGuard riskSuspectGuard) {
+                                NotifyService notifyService, RiskSuspectGuard riskSuspectGuard,
+                                CuaDriverExecutor cuaDriverExecutor, CuaCommandResolver cuaCommandResolver) {
         this.executor = executor;
         this.accountMapper = accountMapper;
         this.notifyService = notifyService;
         this.riskSuspectGuard = riskSuspectGuard;
+        this.cuaDriverExecutor = cuaDriverExecutor;
+        this.cuaCommandResolver = cuaCommandResolver;
     }
 
     /** 搜索人才 → 候选人数组 */
@@ -196,19 +203,30 @@ public class LiepinCommandService {
     }
 
     private CliResult run(LiepinAccount account, Duration timeout, String... args) {
+        // 命令级路由(2026-09-29 W2):args[0]=命令名;命令配置为 ui 时走 CUA UI 通道,默认 legacy
+        String command = args.length > 0 && args[0] != null ? args[0] : "";
+        boolean ui = cuaCommandResolver.useUi(command);
+        String channel = ui ? "cua-liepin-driver(UI)" : "liepin-cli";
+
         CliResult result;
         try {
-            result = executor.execute(account, timeout, args);
+            result = ui
+                    ? cuaDriverExecutor.execute(account, timeout, args)
+                    : executor.execute(account, timeout, args);
         } catch (IOException e) {
             throw new CliException(CliException.Type.FAILED,
-                    "liepin-cli 启动失败(可执行文件不存在?): " + e.getMessage(), e);
+                    channel + " 启动失败(可执行文件/脚本路径不存在?): " + e.getMessage(), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new CliException(CliException.Type.FAILED, "执行被中断", e);
         }
 
         try {
-            executor.checkRisk(account, result);
+            if (ui) {
+                cuaDriverExecutor.checkRisk(account, result);
+            } else {
+                executor.checkRisk(account, result);
+            }
         } catch (CliException e) {
             markAccountByException(account, e);
             throw e;

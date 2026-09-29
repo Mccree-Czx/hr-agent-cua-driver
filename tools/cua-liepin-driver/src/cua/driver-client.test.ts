@@ -126,3 +126,45 @@ test("version:解析 --version 输出", async () => {
   assert.equal(await client(runner).version(), "cua-driver 0.30.4");
   assert.deepEqual(calls[0].args, ["--version"]);
 });
+
+/** 按序应答的运行器(超出长度后重复最后一条) */
+function sequencedRunner(
+  results: Array<{ code?: number | null; stdout?: string; stderr?: string; timedOut?: boolean }>,
+): { runner: ProcessRunner; calls: Recorded[] } {
+  const calls: Recorded[] = [];
+  let index = 0;
+  const runner: ProcessRunner = async (cmd, args, opts) => {
+    calls.push({ cmd, args, opts });
+    const r = results[Math.min(index++, results.length - 1)];
+    return {
+      code: r.code === undefined ? 0 : r.code,
+      stdout: r.stdout ?? "",
+      stderr: r.stderr ?? "",
+      timedOut: r.timedOut ?? false,
+    };
+  };
+  return { runner, calls };
+}
+
+test("callTool:session 结束后自动 start_session 复活并重试一次", async () => {
+  const { runner, calls } = sequencedRunner([
+    { code: 1, stderr: "session has ended; tool call 'list_windows' was rejected. Call start_session with session 'hr-agent-test'" },
+    { code: 0, stdout: "{\"status\":\"ok\"}" },
+    { code: 0, stdout: "{\"_legacy_windows\":[]}" },
+  ]);
+  const result = await client(runner).callTool("list_windows", {});
+
+  assert.equal(result.status, "ok");
+  assert.deepEqual(calls.map((c) => c.args[1]), ["list_windows", "start_session", "list_windows"]);
+  const reviveStdin = JSON.parse(calls[1].opts.stdin ?? "{}");
+  assert.equal(reviveStdin.session, "hr-agent-test", "复活调用必须携带同一 session 标签");
+});
+
+test("callTool:会话复活失败时原样抛错且不无限重试", async () => {
+  const { runner, calls } = sequencedRunner([
+    { code: 1, stderr: "session has ended ...was rejected" },
+    { code: 1, stderr: "start_session failed" },
+  ]);
+  await assert.rejects(client(runner).callTool("list_windows", {}), /session has ended/);
+  assert.equal(calls.length, 2, "仅尝试一次复活,不得循环");
+});

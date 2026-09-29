@@ -9,7 +9,8 @@
 import { loadConfigFromEnv } from "../config.js";
 import { exitCodeOf, truncate } from "../contract.js";
 import { doctor } from "../commands/doctor.js";
-import { isPlannedCommand } from "../commands/registry.js";
+import { isPendingCommand } from "../commands/registry.js";
+import { handleGreet, handleRequestResume, handleSendMessage } from "../commands/outbound.js";
 import { parseArgs } from "./args.js";
 
 const VERSION = "0.1.0";
@@ -19,12 +20,18 @@ function printHelp(): void {
 
 用法: cua-liepin-driver <命令> [选项]
 
-命令:
-  doctor            环境自检(--attach 做一次附加+快照冒烟;--json 输出 JSON)
-  login/greet/request-resume/send-message/chatlist/chatmsg/recommend/resume/
-  search/joblist/attach-fetch/attach-download/jobpublish/jobdelete
-                    计划内命令(W1 骨架阶段未实现,按全量替换计划 W2+ 落地)
-  help | --version
+已实现命令:
+  doctor                                          环境自检(--attach 附加+快照冒烟;--json 输出 JSON)
+  greet <resume_id> --ejobId <id>                 打招呼(--jobTitle 职位标题;--message 话术;
+                                                   --dry-run 只定位不执行;--allow-unverified)
+  request-resume <resume_id> [--imId <对方会话>]  索要简历(--dry-run/--allow-unverified)
+  send-message <resume_id> --text <消息>          向已建会话发送消息(--dry-run)
+
+计划内命令(W3+ 落地,当前为占位应答):
+  login/chatlist/chatmsg/recommend/resume/search/joblist/attach-fetch/attach-download/jobpublish/jobdelete
+
+公共选项: --json(JSON 输出,步骤日志走 stderr)
+外部辅助: help | --version
 
 环境变量:
   CUA_DRIVER_BIN             cua-driver 可执行文件(默认 PATH 查找)
@@ -60,8 +67,20 @@ async function main(argv: string[]): Promise<number> {
     return code;
   }
 
-  if (isPlannedCommand(command)) {
-    console.error(`${command}: 未实现(W1 骨架;按全量替换计划在 W2+ 落地)`);
+  // W2 外发类命令(UI 通道)
+  if (command === "greet" || command === "request-resume" || command === "send-message") {
+    const cfg = loadConfigFromEnv();
+    if (command === "greet") {
+      return handleGreet(cfg, args);
+    }
+    if (command === "request-resume") {
+      return handleRequestResume(cfg, args);
+    }
+    return handleSendMessage(cfg, args);
+  }
+
+  if (isPendingCommand(command)) {
+    console.error(`${command}: 未实现(按全量替换计划在 W3+ 落地)`);
     return 1;
   }
 
