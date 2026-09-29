@@ -6,3 +6,7 @@ dist/
 
 # Logs
 *.log
+
+# 联调截图产物(不入库)
+*.png
+!docs/**/*.png
