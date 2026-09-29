@@ -9,12 +9,16 @@
  * - 输出形状未完全统一:浏览器类工具带 status(ok/refused);非浏览器类工具(如 list_windows)
  *   成功时无 status 字段;browser_click 拒绝还有 effect="refused"+error.code 形状——逐一兼容;
  * - session 标签有生命周期:过期/结束后普通动作会被拒绝("session has ended"),
- *   必须显式 start_session 复活(本客户端自动完成并重试一次,2026-09-29 实测);
+ *   必须显式 start_session 复活;标签彻底不可复活('session_unavailable')时
+ *   自动派生 base-1..base-N 新标签并重试一次(2026-09-29 真机验证);
  * - exit code 非 0 仅表示用法/进程级失败。
  */
 
 import { CuaError, truncate } from "../contract.js";
 import { defaultRunner, type ProcessRunner } from "./process.js";
+
+/** 会话迁移档位上限(base-1..base-N;防御标签连续死亡下的无限派生) */
+export const SESSION_MIGRATION_SLOTS = 3;
 
 export interface DriverClientOptions {
   bin: string;
@@ -38,9 +42,17 @@ export interface ToolCallResult {
 
 export class DriverClient {
   private readonly runner: ProcessRunner;
+  /** 当前活动会话标签(可因迁移而变化:base → base-1..base-N) */
+  private activeSession: string;
 
   constructor(private readonly opts: DriverClientOptions) {
     this.runner = opts.runner ?? defaultRunner;
+    this.activeSession = opts.session;
+  }
+
+  /** 当前活动会话标签(诊断/测试用) */
+  get sessionLabel(): string {
+    return this.activeSession;
   }
 
   /** 调用一个 cua-driver 工具;拒绝不抛错,由调用方决定语义 */
@@ -51,9 +63,9 @@ export class DriverClient {
   private async callToolInternal(
     tool: string,
     args: Record<string, unknown>,
-    retriedAfterRevive: boolean,
+    retriedAfterSessionFix: boolean,
   ): Promise<ToolCallResult> {
-    const payload = JSON.stringify({ ...args, session: this.opts.session });
+    const payload = JSON.stringify({ ...args, session: this.activeSession });
     const res = await this.runner(this.opts.bin, ["call", tool], {
       stdin: payload,
       timeoutMs: this.opts.timeoutMs,
@@ -63,12 +75,14 @@ export class DriverClient {
       throw new CuaError("failed", `cua-driver call ${tool} 超时(${this.opts.timeoutMs}ms)`);
     }
     if (res.code !== 0) {
-      // session 生命周期:结束后普通动作被拒(实测文案 "session has ended ... was rejected");
-      // 显式 start_session 复活后重试一次(幂等,官方语义:ordinary actions never revive ended names)
+      // 会话标签生命周期(2026-09-29 两次真机实测):
+      // - "session has ended":闲置过期,start_session 可复活;
+      // - "session_unavailable":标签不可复活,需派生新标签(base-1..base-N);
+      // 修复后重试一次(幂等)。
       const output = res.stderr + res.stdout;
-      if (!retriedAfterRevive && /session has ended/i.test(output)) {
-        const revived = await this.reviveSession();
-        if (revived) {
+      if (!retriedAfterSessionFix && /session has ended|session_unavailable/i.test(output)) {
+        const fixed = await this.migrateSession();
+        if (fixed) {
           return this.callToolInternal(tool, args, true);
         }
       }
@@ -132,11 +146,30 @@ export class DriverClient {
     return result.data;
   }
 
-  /** 复活已结束的公共会话标签(start_session 幂等);成功返回 true */
-  private async reviveSession(): Promise<boolean> {
+  /**
+   * 会话修复(2026-09-29 真机:标签会闲置死亡且 start_session 可能返回
+   * session_unavailable):先尝试复活当前标签,再逐档派生 base-1..base-N;
+   * 成功返回 true 并切换 activeSession。
+   */
+  private async migrateSession(): Promise<boolean> {
+    if (await this.ensureSession(this.activeSession)) {
+      return true;
+    }
+    for (let i = 1; i <= SESSION_MIGRATION_SLOTS; i++) {
+      const candidate = `${this.opts.session}-${i}`;
+      if (await this.ensureSession(candidate)) {
+        this.activeSession = candidate;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** start_session(label) 幂等;退出码 0 视为可用 */
+  private async ensureSession(label: string): Promise<boolean> {
     try {
       const res = await this.runner(this.opts.bin, ["call", "start_session"], {
-        stdin: JSON.stringify({ session: this.opts.session }),
+        stdin: JSON.stringify({ session: label }),
         timeoutMs: this.opts.timeoutMs,
       });
       return !res.timedOut && res.code === 0;

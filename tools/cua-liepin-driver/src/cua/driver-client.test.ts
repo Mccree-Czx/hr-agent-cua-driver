@@ -166,5 +166,24 @@ test("callTool:会话复活失败时原样抛错且不无限重试", async () =>
     { code: 1, stderr: "start_session failed" },
   ]);
   await assert.rejects(client(runner).callTool("list_windows", {}), /session has ended/);
-  assert.equal(calls.length, 2, "仅尝试一次复活,不得循环");
+  assert.equal(calls.length, 5, "1 次原调用 + 1 次复活(base) + 3 次派生(共 4 次 start_session),不得循环");
+});
+
+test("callTool:标签不可复活(session_unavailable) → 派生 base-1 成功并重试", async () => {
+  const { runner, calls } = sequencedRunner([
+    { code: 1, stderr: "{\"code\": \"session_unavailable\"}" },
+    { code: 1, stderr: "session_unavailable" }, // 复活 base 失败
+    { code: 0, stdout: "{\"session\":\"hr-agent-test-1\",\"active\":true}" }, // 派生 -1 成功
+    { code: 0, stdout: "{\"_legacy_windows\":[]}" }, // 重试成功
+  ]);
+  const c = client(runner);
+  const result = await c.callTool("list_windows", {});
+
+  assert.equal(result.status, "ok");
+  assert.deepEqual(calls.map((x) => x.args[1]), ["list_windows", "start_session", "start_session", "list_windows"]);
+  const deriveStdin = JSON.parse(calls[2].opts.stdin ?? "{}");
+  assert.equal(deriveStdin.session, "hr-agent-test-1", "派生档位必须为 base-1");
+  const retryStdin = JSON.parse(calls[3].opts.stdin ?? "{}");
+  assert.equal(retryStdin.session, "hr-agent-test-1", "重试必须用派生后的标签");
+  assert.equal(c.sessionLabel, "hr-agent-test-1");
 });

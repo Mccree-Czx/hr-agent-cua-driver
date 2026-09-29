@@ -152,4 +152,6 @@ UI 输出形状:
 
 ### 环境观察(高频问题)
 - **Chrome 调试授权确认框**(要允许远程调试吗)在新窗口/新目标时**高频再现**;`ensureBrowserSession` 先清障再附加;多窗口共存时偶发 `no CDP target correlates` 或 attach 超时——重跑一次通常可恢复(观测到 3 次自愈);
-- 用户可能同时使用 Chrome(新窗口/关闭),联调应在每步前用 ensure 重新附加,不缓存窗口状态。
+- 用户可能同时使用 Chrome(新窗口/关闭),联调应在每步前用 ensure 重新附加,不缓存窗口状态;
+- **会话标签迁移(已实装)**:标签闲置死亡后 start_session 可能返回 `session_unavailable`(不可复活),旧逻辑仅覆盖 `session has ended` 导致命令全挂;driver-client 现自动逐档派生 `base-1..base-3` 新标签并重试一次;真机验证:死亡 base(hr-agent) 下 `joblist --json` exit 0;注意标签在同一 CLI 调用内一致,target/ref 不跨调用复用,故迁移安全;
+- **附件下载入口(部分确认)**:会话页"收到简历"视图底部有批量条「全部勾选 + 通过筛选 + 不合适 + 浏览简历」;"浏览简历"疑为简历/附件查看入口(viewer 内下载按钮待用户空闲时验证)。
