@@ -4,6 +4,7 @@ import {
   collectLines,
   dedupeConsecutive,
   extractCandidateRecords,
+  extractChatSessions,
   extractJobRecords,
   extractResumeNo,
   extractWantTitles,
@@ -260,6 +261,38 @@ test("extractCandidateRecords:多卡片边界与缺字段置 null", () => {
 test("extractCandidateRecords:无姓名节点时返回空数组", () => {
   const snap = snapRefs([{ name: "人才推荐" }, { name: "27岁" }]);
   assert.deepEqual(extractCandidateRecords(snap), []);
+});
+
+test("extractChatSessions:真机样本(时间锚:名→职位→时间→未读→消息首行)", () => {
+  const snap = snapRefs([
+    { name: "人才推荐" },
+    { name: "邵女士" },
+    { name: "海外ToB渠道销售（出海品牌）" },
+    { name: "17:11" },
+    { name: "[未读]" },
+    { name: "你好~我这里有个职位很适合你，待遇优厚，了解一下吗？期待回复！" },
+    { name: "游雅婕" },
+    { name: "招聘服务专员" },
+    { name: "16:23" },
+  ]);
+  const sessions = extractChatSessions(snap);
+  assert.equal(sessions.length, 2);
+  assert.deepEqual(sessions[0], {
+    name: "邵女士",
+    position: "海外ToB渠道销售（出海品牌）",
+    time: "17:11",
+    unread: true,
+    last_msg: "你好~我这里有个职位很适合你，待遇优厚，了解一下吗？期待回复！",
+  });
+  assert.equal(sessions[1].name, "游雅婕");
+  assert.equal(sessions[1].position, "招聘服务专员");
+  assert.equal(sessions[1].unread, false);
+  assert.equal(sessions[1].last_msg, null, "短文本(问 Lily)不得误收为消息首行");
+});
+
+test("extractChatSessions:无时间锚时返回空(不伪造会话)", () => {
+  const snap = snapRefs([{ name: "邵女士" }, { name: "海外销售" }]);
+  assert.deepEqual(extractChatSessions(snap), []);
 });
 
 test("hasAttachmentHint:简历/附件卡片文案", () => {

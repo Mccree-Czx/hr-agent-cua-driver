@@ -8,7 +8,7 @@
 
 import type { DriverConfig } from "../config.js";
 import { flagValue, type ParsedArgs } from "../cli/args.js";
-import { extractJobRecords } from "../cua/extract.js";
+import { extractChatSessions, extractJobRecords } from "../cua/extract.js";
 import {
   runReadChatMsg,
   runReadList,
@@ -75,14 +75,22 @@ export async function handleSearch(cfg: DriverConfig, args: ParsedArgs): Promise
   });
 }
 
-/** chatlist --url <页面> [--json] */
+/** chatlist [--url <页面>] [--json]
+ * 默认 /chat/im(2026-09-29 验证);结构化 records(会话名键:name/position/time/unread/last_msg;
+ * 对方 im_id 在 UI 无直接通道,下游以会话名作为替代键) */
 export async function handleChatlist(cfg: DriverConfig, args: ParsedArgs): Promise<number> {
-  const url = requireUrl(args, "chatlist", "沟通列表页;注意旧 /im 路由已被猎聘下线");
-  if (url === null) {
-    return 1;
-  }
+  const url = (flagValue(args, "url") ?? "https://lpt.liepin.com/chat/im").trim();
   return withContext(cfg, args, async (ctx) => {
-    printRaw(await runReadPageGeneric(ctx, url, "沟通列表页"));
+    printRaw(
+      await runReadList(ctx, {
+        pageUrl: url,
+        captureRefs: [],
+        idParam: "imId",
+        dryRun: false,
+        label: "沟通列表页",
+        recordsExtractor: (snap) => extractChatSessions(snap),
+      }),
+    );
   });
 }
 

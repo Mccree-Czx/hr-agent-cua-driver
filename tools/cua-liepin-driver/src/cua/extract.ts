@@ -255,6 +255,68 @@ export function matchEducation(text: string): string | null {
   return m !== null ? m[1] : null;
 }
 
+/** 会话列表记录(chatlist 结构化;2026-09-29 真机样本推导) */
+export interface ChatSessionRecord {
+  name: string;
+  position: string | null;
+  time: string | null;
+  unread: boolean;
+  last_msg: string | null;
+}
+
+/** 时间行(会话行锚:HH:MM) */
+const CHAT_TIME_RE = /^\d{1,2}:\d{2}$/;
+
+/** 从 refs[from] 向前收集最多 max 个非空名称(span 限制搜索深度) */
+function backNames(refs: SnapshotRef[], from: number, max: number, span: number): string[] {
+  const out: string[] = [];
+  for (let i = from; i >= Math.max(0, from - span) && out.length < max; i--) {
+    const n = refs[i].name;
+    if (n !== null && n.trim() !== "") {
+      out.push(n.trim());
+    }
+  }
+  return out;
+}
+
+/**
+ * 抽取会话列表(时间锚法)。
+ * 真机样本(2026-09-29 /chat/im):会话段 = 名 → 职位 → 时间 → [未读] → [消息首行];
+ * 示例:"邵女士 / 海外ToB渠道销售（出海品牌）/ 17:11 / [未读] / 你好~...";
+ * 时间锚前取得最近两个非空文本作为 [职位, 名];时间后 8 节点内识别未读标记与长文本消息首行。
+ */
+export function extractChatSessions(snap: SnapshotResult): ChatSessionRecord[] {
+  const refs = snap.refs;
+  const out: ChatSessionRecord[] = [];
+  refs.forEach((r, i) => {
+    if (r.name === null || !CHAT_TIME_RE.test(r.name.trim())) {
+      return;
+    }
+    const back = backNames(refs, i - 1, 2, 14);
+    if (back.length < 2) {
+      return;
+    }
+    let unread = false;
+    let lastMsg: string | null = null;
+    for (let j = i + 1; j < Math.min(refs.length, i + 8); j++) {
+      const n = refs[j].name;
+      if (n === null) {
+        continue;
+      }
+      const text = n.trim();
+      if (text.includes("未读")) {
+        unread = true;
+        continue;
+      }
+      if (lastMsg === null && text.length >= 8) {
+        lastMsg = text;
+      }
+    }
+    out.push({ name: back[1], position: back[0], time: r.name.trim(), unread, last_msg: lastMsg });
+  });
+  return out;
+}
+
 /** 附件卡片文案迹象(chatmsg 附件检测;旧 API 路线需解 bizType=7 载荷,UI 更直观) */
 export function hasAttachmentHint(lines: string[]): boolean {
   return lines.some((l) => /简历|附件/.test(l) && /\.(pdf|docx?|doc)|附件|简历/.test(l));
