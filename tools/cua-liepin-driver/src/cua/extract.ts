@@ -343,3 +343,87 @@ export function extractJobRecords(snap: SnapshotResult): JobRecord[] {
   }
   return records;
 }
+
+/** 推荐卡片候选人记录(recommend 结构化;2026-09-29 真机样本推导) */
+export interface CandidateRecord {
+  name: string;
+  age: string | null;
+  experience: string | null;
+  education: string | null;
+  /** 现居城市(位置:年龄/经验/学历之后、"期望:"之前) */
+  location: string | null;
+  expect_city: string | null;
+  expect_position: string | null;
+  expect_salary: string | null;
+}
+
+/** 候选人姓名特征(隐私化展示:姓+女士/先生) */
+export const CANDIDATE_NAME_RE = /^[\u4e00-\u9fa5]{1,3}(女士|先生)$/;
+
+/**
+ * 抽取推荐卡片候选人列表。
+ * 真机样本(2026-09-29 推荐页)卡片序列:姓名 → 年龄("27岁") → 经验("3年") →
+ * 学历("本科") → 现居城市 → "期望:" → 期望城市 → 期望职位 → 期望薪资;
+ * 行边界 = 下一个姓名节点(无则向后最多 80 节点);字段缺失置 null 不伪造。
+ */
+export function extractCandidateRecords(snap: SnapshotResult): CandidateRecord[] {
+  const refs = snap.refs;
+  const idxs: number[] = [];
+  refs.forEach((r, i) => {
+    if (r.name !== null && CANDIDATE_NAME_RE.test(r.name.trim())) {
+      idxs.push(i);
+    }
+  });
+  const records: CandidateRecord[] = [];
+  for (let k = 0; k < idxs.length; k++) {
+    const start = idxs[k];
+    const end = k + 1 < idxs.length ? idxs[k + 1] : Math.min(refs.length, start + 80);
+    const record: CandidateRecord = {
+      name: (refs[start].name as string).trim(),
+      age: null,
+      experience: null,
+      education: null,
+      location: null,
+      expect_city: null,
+      expect_position: null,
+      expect_salary: null,
+    };
+    let expectSeen = false;
+    for (let i = start + 1; i < end; i++) {
+      const name = refs[i].name;
+      if (name === null) {
+        continue;
+      }
+      const text = name.trim();
+      if (record.age === null && /^\d{2}岁$/.test(text)) {
+        record.age = text;
+        continue;
+      }
+      if (record.experience === null && /^(\d{1,2}年(以上|以内)?|\d{1,2}-\d{1,2}年)$/.test(text)) {
+        record.experience = text;
+        continue;
+      }
+      if (record.education === null && matchEducation(text) !== null) {
+        record.education = text;
+        continue;
+      }
+      if (/^期望[:：]?$/.test(text)) {
+        expectSeen = true;
+        continue;
+      }
+      if (expectSeen) {
+        if (record.expect_city === null && /^[\u4e00-\u9fa5]{2,6}$/.test(text)) {
+          record.expect_city = text;
+        } else if (record.expect_city !== null && record.expect_position === null && /^[\u4e00-\u9fa5]{2,10}$/.test(text)) {
+          record.expect_position = text;
+        } else if (record.expect_salary === null && matchSalary(text) !== null) {
+          record.expect_salary = matchSalary(text);
+        }
+      } else if (record.location === null && /^[\u4e00-\u9fa5]{2,6}$/.test(text)) {
+        record.location = text;
+      }
+    }
+    records.push(record);
+  }
+  return records;
+}

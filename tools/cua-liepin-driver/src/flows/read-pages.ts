@@ -7,7 +7,14 @@
  */
 
 import { CuaError } from "../contract.js";
-import { extractResumeNo, hasAttachmentHint, queryParam, rawTextOf, textLinesOf } from "../cua/extract.js";
+import {
+  extractCandidateRecords,
+  extractResumeNo,
+  hasAttachmentHint,
+  queryParam,
+  rawTextOf,
+  textLinesOf,
+} from "../cua/extract.js";
 import { clickRef, type SnapshotResult } from "../cua/session.js";
 import { takeSnapshot, type UiContext } from "../cua/ui-actions.js";
 import { checkPageState, navigateChecked } from "./common.js";
@@ -147,7 +154,7 @@ export async function runReadList(ctx: UiContext, input: ReadListInput): Promise
   };
 }
 
-/** 推荐列表页抽取(+ 可选 ID 穿透) */
+/** 推荐列表页抽取(+ 可选 ID 穿透 + 候选人 records) */
 export async function runReadRecommend(ctx: UiContext, input: RecommendInput): Promise<RawPageOutcome> {
   const url = input.pageUrl ?? "https://lpt.liepin.com/recommend";
   const outcome = await runReadList(ctx, {
@@ -156,6 +163,7 @@ export async function runReadRecommend(ctx: UiContext, input: RecommendInput): P
     idParam: input.idParam ?? "resIdEncode",
     dryRun: input.dryRun,
     label: "列表页",
+    recordsExtractor: (snap) => extractCandidateRecords(snap),
   });
   if (input.jobId !== undefined && input.jobId !== "") {
     outcome.steps.unshift(`jobId=${input.jobId}(岗位上下文参数待联调确认,当前按页面默认呈现)`);

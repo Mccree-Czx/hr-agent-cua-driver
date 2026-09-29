@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   collectLines,
   dedupeConsecutive,
+  extractCandidateRecords,
   extractJobRecords,
   extractResumeNo,
   extractWantTitles,
@@ -200,6 +201,64 @@ test("extractJobRecords:待发布行缺字段时置 null(不伪造)", () => {
   const snap = snapRefs([{ name: "销售经理", role: "link", actions: ["click"] }]);
   const records = extractJobRecords(snap);
   assert.deepEqual(records, [{ name: "销售经理", location: null, salary: null, refreshed_at: null, status: null }]);
+});
+
+test("extractCandidateRecords:真机样本结构(温女士卡片序列)", () => {
+  const snap = snapRefs([
+    { name: "温女士" },
+    { name: "27岁" },
+    { name: "3年" },
+    { name: "本科" },
+    { name: "济南" },
+    { name: "期望：" },
+    { name: "墨西哥" },
+    { name: "海外销售" },
+    { name: "15-20K" },
+    { name: "机械/设备" },
+  ]);
+  const records = extractCandidateRecords(snap);
+  assert.equal(records.length, 1);
+  assert.deepEqual(records[0], {
+    name: "温女士",
+    age: "27岁",
+    experience: "3年",
+    education: "本科",
+    location: "济南",
+    expect_city: "墨西哥",
+    expect_position: "海外销售",
+    expect_salary: "15-20K",
+  });
+});
+
+test("extractCandidateRecords:多卡片边界与缺字段置 null", () => {
+  const snap = snapRefs([
+    { name: "温女士" },
+    { name: "27岁" },
+    { name: "3年" },
+    { name: "本科" },
+    { name: "济南" },
+    { name: "期望：" },
+    { name: "墨西哥" },
+    { name: "海外销售" },
+    { name: "15-20K" },
+    { name: "陈先生" },
+    { name: "33岁" },
+    { name: "8年" },
+    { name: "硕士" },
+    { name: "上海" },
+  ]);
+  const records = extractCandidateRecords(snap);
+  assert.equal(records.length, 2);
+  assert.equal(records[0].expect_position, "海外销售");
+  assert.equal(records[1].name, "陈先生");
+  assert.equal(records[1].location, "上海");
+  assert.equal(records[1].expect_city, null, "第二张卡片无期望区,不得串入第一张");
+  assert.equal(records[1].expect_salary, null);
+});
+
+test("extractCandidateRecords:无姓名节点时返回空数组", () => {
+  const snap = snapRefs([{ name: "人才推荐" }, { name: "27岁" }]);
+  assert.deepEqual(extractCandidateRecords(snap), []);
 });
 
 test("hasAttachmentHint:简历/附件卡片文案", () => {
