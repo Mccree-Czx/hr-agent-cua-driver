@@ -2,10 +2,10 @@
 
 HR Agent 的猎聘 **UI 驱动适配器**:通过 [trycua/cua](https://github.com/trycua/cua) 的 Cua Driver,以**真实 UI 操作**(元素级点击/输入 + 快照验证)替代 liepin-cli 的"注入 fetch 直调内部接口",恢复真实请求链路以降低风控面。
 
-> 状态:W3 读类命令已实现(UI 抽取,52 单测);字段保真度与页面锚点**真机联调待登录后补**;
+> 状态:W4 附件类命令已实现(UI 下载通道,62 单测);字段保真度与页面锚点**真机联调待登录后补**;
 > 机制验证见 `docs/superpowers/specs/2026-09-29-cua-driver-w0-spike.md`;
 > 字段/ID 抽取契约见 `docs/superpowers/specs/2026-09-29-ui-extraction-contract.md`。
-> 剩余命令(附件/管理/登录)在 W4+ 逐波落地。
+> 剩余命令(管理/登录/生命周期)在 W5 落地。
 
 ## 工作原理(W0 实测结论)
 
@@ -46,6 +46,10 @@ node dist/cli/index.js search --url <页面> --json
 node dist/cli/index.js chatlist --url <页面> --json
 node dist/cli/index.js chatmsg --url <会话页> [--imId <对方会话>] --json
 node dist/cli/index.js joblist --url <页面> --json
+
+# W4 附件类命令(UI 下载通道;--url 待联调确认)
+node dist/cli/index.js attach-fetch --url <会话页> --out <绝对目录> [--imId <对方>] [--dry-run] --json
+node dist/cli/index.js attach-download --url <会话页> --out <绝对目录> [--imId <对方>] --json
 ```
 
 ## 环境变量
@@ -71,16 +75,19 @@ src/
   cua/session.ts         # prepare→bind→snapshot/query/click
   cua/ui-actions.ts      # 匹配器/等待/点击/键入/证据 步骤原语(可注入时钟)
   cua/extract.ts         # 读类抽取框架(文本行/区块/字段模式/URL 参数)
+  cua/download.ts        # 附件下载与校验(目录差集识别/PDF 签名/SHA-256)
   flows/common.ts        # 简历页 URL、IM 面板、发消息
   flows/greet.ts         # 打招呼步骤机(职位弹窗保守处理)
   flows/request-resume.ts# 索要简历步骤机(死按钮复测路径)
   flows/read-resume.ts   # 在线简历详情读取(want_title + raw_text)
   flows/read-pages.ts    # 列表页抽取 + 点击穿透取 ID + 会话消息读取
+  flows/attachments.ts   # 附件检出+下载+校验(三态契约)
   cli/args.ts            # 参数解析(支持重复 --ref)
   cli/index.ts           # CLI 入口(契约:退出码/--json)
   commands/doctor.ts     # 自检命令
   commands/outbound.ts   # greet/request-resume/send-message 处理器
   commands/reads.ts      # resume/recommend/search/chatlist/chatmsg/joblist 处理器
+  commands/attachments.ts# attach-fetch/attach-download 处理器
   commands/registry.ts   # 命令字面量(已实现/待实现)
 ```
 
@@ -88,5 +95,5 @@ src/
 
 - W2(已完成):greet / request-resume / send-message — 真机联调待登录
 - W3(已完成):resume / recommend / search / chatlist / chatmsg / joblist(UI 抽取 + 契约文档)— 页面锚点/字段保真度真机联调待登录
-- W4:attach-fetch / attach-download(下载通道)
+- W4(已完成):attach-fetch / attach-download(检出+真实下载+校验;三态契约)— 会话页 URL 与下载审批真机联调待登录
 - W5:jobpublish / jobdelete / login / 浏览器生命周期(无 CDP 启动、常驻保活)

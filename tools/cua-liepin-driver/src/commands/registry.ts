@@ -3,7 +3,8 @@
  *
  * W2 起:doctor/greet/request-resume/send-message 已实现(UI 通道);
  * W3 起:resume/recommend/search/chatlist/chatmsg/joblist 已实现(UI 读取抽取);
- * 其余命令按波次(W4+)落地,未实现前 CLI 以占位应答(exit 1)。
+ * W4 起:attach-fetch/attach-download 已实现(UI 下载通道);
+ * 其余命令按波次(W5+)落地,未实现前 CLI 以占位应答(exit 1)。
  */
 
 export const PLANNED_COMMANDS = [
@@ -25,7 +26,7 @@ export const PLANNED_COMMANDS = [
 
 export type PlannedCommand = (typeof PLANNED_COMMANDS)[number];
 
-/** 已实现命令(W2 外发类 + W3 读类) */
+/** 已实现命令(W2 外发类 + W3 读类 + W4 附件类) */
 export const IMPLEMENTED_COMMANDS: readonly string[] = [
   "greet",
   "request-resume",
@@ -36,6 +37,8 @@ export const IMPLEMENTED_COMMANDS: readonly string[] = [
   "chatlist",
   "chatmsg",
   "joblist",
+  "attach-fetch",
+  "attach-download",
 ];
 
 /** 尚未实现的计划内命令(CLI 占位应答) */

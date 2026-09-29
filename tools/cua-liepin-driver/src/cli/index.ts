@@ -19,6 +19,7 @@ import {
   handleResume,
   handleSearch,
 } from "../commands/reads.js";
+import { handleAttachDownload, handleAttachFetch } from "../commands/attachments.js";
 import { parseArgs } from "./args.js";
 
 const VERSION = "0.1.0";
@@ -41,9 +42,11 @@ function printHelp(): void {
   chatlist --url <页面>                           沟通列表页抽取(--url 待联调确认)
   chatmsg --url <会话页> [--imId <对方会话>]      会话消息读取(附件卡片迹象检测)
   joblist --url <页面>                            职位列表页抽取(--url 待联调确认)
+  attach-fetch --url <会话页> --out <目录>        附件检出+下载(三态输出;--imId 留痕;--dry-run)
+  attach-download --url <会话页> --out <目录>     附件下载(任一失败非零退出)
 
-计划内命令(W4+ 落地,当前为占位应答):
-  login/attach-fetch/attach-download/jobpublish/jobdelete
+计划内命令(W5+ 落地,当前为占位应答):
+  login/jobpublish/jobdelete
 
 公共选项: --json(JSON 输出,步骤日志走 stderr)
 外部辅助: help | --version
@@ -114,8 +117,16 @@ async function main(argv: string[]): Promise<number> {
     }
   }
 
+  // W4 附件类命令(UI 下载通道)
+  if (command === "attach-fetch" || command === "attach-download") {
+    const cfg = loadConfigFromEnv();
+    return command === "attach-fetch"
+      ? handleAttachFetch(cfg, args)
+      : handleAttachDownload(cfg, args);
+  }
+
   if (isPendingCommand(command)) {
-    console.error(`${command}: 未实现(按全量替换计划在 W4+ 落地)`);
+    console.error(`${command}: 未实现(按全量替换计划在 W5+ 落地)`);
     return 1;
   }
 

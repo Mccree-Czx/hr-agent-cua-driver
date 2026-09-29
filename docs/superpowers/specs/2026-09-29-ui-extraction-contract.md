@@ -65,6 +65,18 @@ UI 输出形状:
 - 后端消费:`jobId` + 标题/状态(同步到岗位管理)。
 - UI:列表页文本抽取;`jobId` 点击穿透(职位详情/编辑 URL,待确认)。
 
+### 2.6 attach-fetch / attach-download(W4)
+
+- 后端消费(ChatPollService):成功 `{success:true, file(绝对路径,后端读字节后删除), fileName, sha256}`;
+  无附件 `{success:false, reason:"no-attachment"}`(后端记探测标记不再重复);其余失败 `{success:false, reason, detail}` 下轮重试。
+- UI 流程:会话页快照检出附件卡片(文件名样式 `.pdf/.doc/.docx` 优先,
+  其次"简历/附件"文案,均需带 click 动作)→ `browser_download(ref, destination_root)`
+  触发真实下载;**该工具不返回文件名/路径** → 以目标目录差集识别新落盘文件 →
+  非空 + `%PDF-` 签名 + SHA-256 校验后输出 `file/fileName/bytes/sha256/sourceOrigin:"ui-download"`。
+- 已知联调项:① 会话页 URL(im_id → URL)待确认;② `browser_download` 声明"需要 destructive-tool 审批",
+  CLI 路径下是否需额外授权/是否会返回 `download-refused` 待实测;③ 文件名中的中文/编码兼容性。
+- 注入纪律:下载目录必须为绝对路径(对齐后端 `attachWorkDir()`);非 PDF 附件拒绝入库(与 legacy 一致,doc/docx 待样本)。
+
 ## 3. 后端解析适配清单(联调验证后实施)
 
 1. `SearchTaskService.saveCandidates`:`resume_id` 就绪前不放行 UI 通道(否则全员丢弃)。
@@ -79,6 +91,7 @@ UI 输出形状:
 | 列表页打开+全文抽取 | ≈4-6s |
 | 卡片点击穿透(取 ID) | ≈6-10s/卡 |
 | 简历详情读取 | ≈5-8s/人 |
+| 附件下载(检出+下载+校验) | ≈8-15s/份 |
 
 影响:轮内 60 次简历读取的预算在 UI 化后需重估(见 W0 报告 §3 预留项);
 
@@ -91,4 +104,5 @@ UI 输出形状:
 2. `resume <真实resume_id> --json` → 校准 `want_title` 抽取(期望区块文案)与 raw_text 完整性。
 3. `chatlist --json` → 确认会话页 URL、direction 启发式;`chatmsg` 会话定位。
 4. `joblist --json` → 职位行结构与 jobId 穿透。
-5. 固化匹配器与 URL 后,更新本契约文档"待确认"项为"已验证",并提交。
+5. `attach-fetch --url <会话页> --out <目录> --json` → 校准附件卡片 ref 匹配与 `browser_download` 审批行为;再跑 `attach-download` 严格路径。
+6. 固化匹配器与 URL 后,更新本契约文档"待确认"项为"已验证",并提交。
