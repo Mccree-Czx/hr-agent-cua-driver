@@ -36,7 +36,7 @@ export async function withContext(
   const log = makeLogger(json);
   const client = new DriverClient({ bin: cfg.bin, session: cfg.session, timeoutMs: cfg.callTimeoutMs });
   try {
-    const session = await attachBrowserSession(client, cfg.windowTitleMatch);
+    const session = await attachBrowserSession(client, cfg);
     log(`已附加窗口 pid=${session.window.pid} window=${session.window.windowId}`);
     const ctx: UiContext = { client, session, dryRun: args.flags["dry-run"] === true, log, sleep };
     await run(ctx);

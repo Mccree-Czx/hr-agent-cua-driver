@@ -11,7 +11,7 @@
 import type { DriverConfig } from "../config.js";
 import { DriverClient } from "../cua/driver-client.js";
 import { attachBrowserSession, snapshot } from "../cua/session.js";
-import { listWindows, pickChromeWindow } from "../cua/window.js";
+import { listWindows, pickBrowserWindow, powershellCmdlineOf } from "../cua/window.js";
 import { EXIT_OK, truncate } from "../contract.js";
 
 export interface DoctorReport {
@@ -51,7 +51,10 @@ export async function doctor(
 
   try {
     const windows = await listWindows(client);
-    const found = pickChromeWindow(windows, cfg.windowTitleMatch);
+    const found = await pickBrowserWindow(windows, cfg.windowTitleMatch, {
+      profileDir: cfg.profileDir,
+      cmdlineOf: powershellCmdlineOf,
+    });
     report.chromeWindow = found
       ? { pid: found.pid, windowId: found.windowId, title: found.title }
       : null;
@@ -66,7 +69,7 @@ export async function doctor(
 
   if (options.attach) {
     try {
-      const session = await attachBrowserSession(client, cfg.windowTitleMatch);
+      const session = await attachBrowserSession(client, cfg);
       const snap = await snapshot(client, session);
       report.attach = { ok: true, pageUrl: snap.page.url, refCount: snap.refs.length };
       options.log(`[ok] attach+snapshot: ${snap.page.url} (节点 ${snap.refs.length})`);

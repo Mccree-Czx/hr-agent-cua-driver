@@ -10,8 +10,9 @@
  */
 
 import { CuaError } from "../contract.js";
+import type { DriverConfig } from "../config.js";
 import type { DriverClient } from "./driver-client.js";
-import { listWindows, pickChromeWindow, type NativeWindow } from "./window.js";
+import { listWindows, pickBrowserWindow, powershellCmdlineOf, type NativeWindow } from "./window.js";
 
 export interface BrowserSession {
   targetId: string;
@@ -44,18 +45,23 @@ interface BindTab {
 
 /**
  * 附加并绑定猎聘 Chrome 窗口。
+ * 窗口挑选:优先按账号 profile 目录匹配进程命令行(标题不稳定),标题匹配兜底。
  * 找不到窗口时抛 CuaError(提示先启动浏览器;自动启动属浏览器生命周期,W5 落地)。
  */
 export async function attachBrowserSession(
   client: DriverClient,
-  titleMatch: RegExp,
+  cfg: DriverConfig,
 ): Promise<BrowserSession> {
   const windows = await listWindows(client);
-  const window = pickChromeWindow(windows, titleMatch);
+  const window = await pickBrowserWindow(windows, cfg.windowTitleMatch, {
+    profileDir: cfg.profileDir,
+    cmdlineOf: powershellCmdlineOf,
+  });
   if (window === null) {
     throw new CuaError(
       "failed",
-      "未找到猎聘 Chrome 窗口(标题匹配失败);请先启动猎聘浏览器(浏览器自动启动在 W5 落地)",
+      `未找到猎聘浏览器窗口(profile=${cfg.profileDir ?? "未配置"},标题匹配=${cfg.windowTitleMatch});` +
+        "请先启动账号 Chrome(浏览器自动启动在 W5 落地)",
     );
   }
 
@@ -96,8 +102,40 @@ export async function attachBrowserSession(
 }
 
 /**
+ * 合并快照节点:refs(动作/内容引用)与 content_refs 都要收集,按 ref 去重
+ * (2026-09-29 联调实测:300 节点预算下两部分各占一部分,只读 refs 会丢失正文节点)。
+ */
+export function mergeSnapshotRefs(data: Record<string, unknown>): SnapshotRef[] {
+  const seen = new Set<string>();
+  const result: SnapshotRef[] = [];
+  for (const source of [data.refs, data.content_refs]) {
+    const list = (Array.isArray(source) ? source : []) as Array<Record<string, unknown>>;
+    for (const r of list) {
+      if (typeof r.ref !== "string" || seen.has(r.ref)) {
+        continue;
+      }
+      seen.add(r.ref);
+      result.push({
+        ref: r.ref,
+        role: typeof r.role === "string" ? r.role : "",
+        name: typeof r.name === "string" ? r.name : null,
+        actions: Array.isArray(r.actions) ? (r.actions as string[]) : [],
+        visibility: typeof r.visibility === "string" ? r.visibility : undefined,
+      });
+    }
+  }
+  return result;
+}
+
+/** 续页上限(默认最多再拉 3 页;防止超大页面耗时失控) */
+const MAX_SNAPSHOT_PAGES = 3;
+
+/**
  * 语义快照(semantic_v2);传入 query 时仅返回匹配节点及其祖先链。
- * query 为中文时必须保证调用方以 UTF-8 传参(stdin JSON + utf8,本模块已保证)。
+ * 联调强化(2026-09-29):
+ * - 合并 refs + content_refs;
+ * - 全量模式下 snapshot.complete=false 时跟随 continuation 续页(最多 3 页),
+ *   保证长页面(简历详情/推荐列表)正文不被 300 节点预算挤出。
  */
 export async function snapshot(
   client: DriverClient,
@@ -112,22 +150,30 @@ export async function snapshot(
   if (query !== undefined && query !== "") {
     args.query = query;
   }
-  const data = await client.requireOk("get_browser_state", args);
+
+  let data = await client.requireOk("get_browser_state", args);
+  let refs = mergeSnapshotRefs(data);
+  let pages = 0;
+  while (query === undefined && pages < MAX_SNAPSHOT_PAGES) {
+    const snapInfo = (data.snapshot ?? {}) as Record<string, unknown>;
+    const continuation = snapInfo.continuation;
+    if (snapInfo.complete !== false || typeof continuation !== "string" || continuation === "") {
+      break;
+    }
+    const next = await client.requireOk("get_browser_state", { ...args, continuation });
+    const merged = mergeSnapshotRefs(next);
+    const known = new Set(refs.map((r) => r.ref));
+    refs = [...refs, ...merged.filter((r) => !known.has(r.ref))];
+    data = next;
+    pages++;
+  }
+
   const snap = (data.snapshot ?? {}) as Record<string, unknown>;
   const page = (data.page ?? {}) as Record<string, unknown>;
-  const rawRefs = ((data.refs ?? data.content_refs ?? []) as Array<Record<string, unknown>>) ?? [];
 
   return {
     snapshotId: typeof snap.id === "string" ? snap.id : "",
-    refs: rawRefs
-      .filter((r) => typeof r.ref === "string")
-      .map((r) => ({
-        ref: r.ref as string,
-        role: typeof r.role === "string" ? r.role : "",
-        name: typeof r.name === "string" ? r.name : null,
-        actions: Array.isArray(r.actions) ? (r.actions as string[]) : [],
-        visibility: typeof r.visibility === "string" ? r.visibility : undefined,
-      })),
+    refs,
     outline: typeof data.outline === "string" ? data.outline : "",
     page: {
       title: typeof page.title === "string" ? page.title : "",

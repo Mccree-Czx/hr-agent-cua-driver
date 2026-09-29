@@ -103,10 +103,26 @@ export const RESUME_SECTION_HEADERS = [
 ];
 
 /** 期望职位区块的行级噪音(标签/辅助信息,不视为职位名) */
-const WANT_TITLE_NOISE = /^(期望薪资|期望城市|期望行业|期望地点|期望地区|到岗时间|工作性质|求职类型|薪资|城市|行业|地点|全职|兼职|随时到岗|面议)/;
+const WANT_TITLE_NOISE = /^(期望薪资|期望城市|期望行业|期望地点|期望地区|到岗时间|工作性质|求职类型|薪资|城市|行业|地点|全职|兼职|随时到岗|面议|全部行业)/;
 
 /** 标签式行(值可能在下一行,如 "期望城市" + "北京"):跳过标签行与其取值行 */
 const WANT_TITLE_LABEL = /^(期望薪资|期望城市|期望行业|期望地点|期望地区|到岗时间|工作性质|求职类型)\s*$/;
+
+/**
+ * 取值行(职位名之后的非职位字段):出现即停止收集。
+ * 联调实测(2026-09-29):求职意向区块实际行序为[职位名, 城市列表, 薪资, 行业...],
+ * 且右侧动作栏文案会混入后继行;因此遇到数值/薪资/纯城市列表行立即截断。
+ */
+function isValueStopLine(stripped: string): boolean {
+  if (/^\d/.test(stripped)) {
+    return true;
+  }
+  if (matchSalary(stripped) !== null) {
+    return true;
+  }
+  // 纯城市列表:如 "上海、杭州、苏州"(每段 2-3 字,无其它内容)
+  return /^(?:[\u4e00-\u9fa5]{2,3}[、·])+[\u4e00-\u9fa5]{2,3}$/.test(stripped);
+}
 
 export interface WantTitleResult {
   /** 拼接后的期望职位(顿号分隔);无则空串 */
@@ -151,11 +167,11 @@ export function extractWantTitles(snap: SnapshotResult): WantTitleResult {
       skipNextAsValue = true;
       continue;
     }
-    if (WANT_TITLE_NOISE.test(stripped)) {
-      continue;
+    // 取值行(数值/薪资/纯城市列表)→ 职位名收集到此为止
+    if (isValueStopLine(stripped)) {
+      break;
     }
-    // 纯数值/薪资行(如 "20-30K"、"5年")不是职位名
-    if (/^\d/.test(stripped)) {
+    if (WANT_TITLE_NOISE.test(stripped)) {
       continue;
     }
     // 过长的行大概率是整段描述而非职位名,截断保护

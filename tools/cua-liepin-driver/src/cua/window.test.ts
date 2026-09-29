@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseWindows, pickChromeWindow, type NativeWindow } from "./window.js";
+import { parseWindows, pickBrowserWindow, pickChromeWindow, type NativeWindow } from "./window.js";
 
 const TITLE_MATCH = /猎聘|liepin/i;
 
@@ -63,4 +63,38 @@ test("pickChromeWindow:全部候选均最小化时兜底返回(CDP 驱动不要�
 test("pickChromeWindow:无匹配返回 null", () => {
   assert.equal(pickChromeWindow([win({ title: "设置" })], TITLE_MATCH), null);
   assert.equal(pickChromeWindow([], TITLE_MATCH), null);
+});
+
+test("pickBrowserWindow:优先按 profile 目录匹配进程命令行(标题不匹配也能命中)", async () => {
+  const windows = [
+    win({ pid: 11, windowId: 1, title: "推荐人才 - Google Chrome" }),
+    win({ pid: 12, windowId: 2, title: "另一个窗口" }),
+  ];
+  const cmdlines: Record<number, string> = {
+    11: "\"C:\\chrome.exe\" --user-data-dir=C:\\profiles\\account-1",
+    12: "\"C:\\edge.exe\" --user-data-dir=C:\\profiles\\other",
+  };
+  const picked = await pickBrowserWindow(windows, TITLE_MATCH, {
+    profileDir: "C:\\profiles\\account-1",
+    cmdlineOf: async (pid) => cmdlines[pid] ?? null,
+  });
+  assert.equal(picked?.windowId, 1);
+});
+
+test("pickBrowserWindow:profile 未命中时回退标题匹配", async () => {
+  const windows = [
+    win({ pid: 21, windowId: 5, title: "推荐人才 - Google Chrome" }),
+    win({ pid: 22, windowId: 6, title: "猎聘企业版 - Google Chrome" }),
+  ];
+  const picked = await pickBrowserWindow(windows, TITLE_MATCH, {
+    profileDir: "C:\\profiles\\account-1",
+    cmdlineOf: async () => null,
+  });
+  assert.equal(picked?.windowId, 6);
+});
+
+test("pickBrowserWindow:未配置 profile 时直接走标题匹配", async () => {
+  const windows = [win({ pid: 31, windowId: 7, title: "推荐人才 - Google Chrome" })];
+  const picked = await pickBrowserWindow(windows, TITLE_MATCH, { profileDir: null });
+  assert.equal(picked, null, "标题不含 猎聘/liepin 时不命中");
 });

@@ -75,6 +75,29 @@ test("extractWantTitles:标题行内联取值", () => {
   assert.equal(extractWantTitles(snap).wantTitle, "Java开发");
 });
 
+test("extractWantTitles:联调实测行序(职位→城市列表→薪资→右侧栏噪音)在取值行截断", () => {
+  const snap = snapOf([
+    "求职意向",
+    "海外销售",
+    "上海、杭州、苏州",
+    "15-20k×14薪",
+    "全部行业",
+    "获取电话",
+    "剩10次权益",
+    "工作经历",
+    "x",
+  ]);
+  const result = extractWantTitles(snap);
+  assert.equal(result.header, "求职意向");
+  assert.deepEqual(result.titles, ["海外销售"]);
+  assert.equal(result.wantTitle, "海外销售");
+});
+
+test("extractWantTitles:多职位顿号行不被城市列表规则误伤", () => {
+  const snap = snapOf(["期望职位", "Java开发、后端开发", "20-30K", "工作经历", "x"]);
+  assert.equal(extractWantTitles(snap).wantTitle, "Java开发、后端开发");
+});
+
 test("extractWantTitles:无期望区块返回空", () => {
   const snap = snapOf(["张三", "工作经历", "x"]);
   const result = extractWantTitles(snap);
@@ -91,6 +114,7 @@ test("queryParam/parseResumeIdFromUrl:仅直接参数可解析(不猜 backurl)",
 test("字段模式:薪资/年限/学历", () => {
   assert.equal(matchSalary("薪资 20-40K·15薪"), "20-40K·15薪");
   assert.equal(matchSalary("30K"), "30K");
+  assert.equal(matchSalary("15-20k×14薪"), "15-20k");
   assert.equal(matchExperience("经验 5-10年"), "5-10年");
   assert.equal(matchEducation("本科及以上"), "本科");
 });
