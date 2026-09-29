@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# npm 凭证（防止误提交 token）
+.npmrc
+
+# User data
+.liepin-cli/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+
+# Temporary files
+tmp/
+temp/
+
+# 猎聘页面逆向分析产物(版权内容,不入库)
+bundle-downloads/
+publish-probe*-output.txt
+probe-manager-icons.txt

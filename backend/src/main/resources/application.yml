@@ -1,0 +1,80 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: hr-agent-backend
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:hr_agent}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    banner: false
+
+hr-agent:
+  jwt:
+    secret: ${JWT_SECRET:hr-agent-dev-secret-change-me-in-production-32chars}
+    expire-hours: ${JWT_EXPIRE_HOURS:12}
+  auth:
+    # 无 token 时放行的路径
+    whitelist:
+      - /api/auth/login
+      - /error
+  ai:
+    # OpenAI 兼容接口(DeepSeek 默认;Qwen: https://dashscope.aliyuncs.com/compatible-mode/v1;GLM: https://open.bigmodel.cn/api/paas/v4)
+    base-url: ${AI_BASE_URL:https://api.deepseek.com}
+    api-key: ${AI_API_KEY:}
+    model: ${AI_MODEL:deepseek-chat}
+    # AgentScope 技能包根目录(agents/skills/<技能名>/SKILL.md;三处 AI 提示词静态注入源,2026-09-28)
+    skill-base-dir: ${AI_SKILL_BASE_DIR:agents/skills}
+  notify:
+    # 飞书自定义机器人 webhook(留空则仅日志告警;开启加签时同步配置 secret)
+    feishu-webhook: ${FEISHU_WEBHOOK:}
+    feishu-secret: ${FEISHU_SECRET:}
+  auto-recruit:
+    # 自动外发开关的首次种子(仅库中无值时生效一次;之后由界面开关控制,存库持久化)
+    enabled: ${AUTO_RECRUIT_ENABLED:false}
+    # 单轮单岗位打招呼上限(2026-09-28 晚工作量翻倍 15→30,与 60s 外发间隔共同压低密度)
+    greet-batch-limit: ${AUTO_RECRUIT_GREET_BATCH_LIMIT:30}
+    # 单轮自动索要上限(索要预算,2026-09-28 晚工作量翻倍 5→10)
+    ask-batch-limit: ${AUTO_RECRUIT_ASK_BATCH_LIMIT:10}
+    # 单轮「在线简历详情」读取上限(只读平台调用;2026-09-28 晚工作量翻倍 10→20)
+    resume-detail-batch-limit: ${AUTO_RECRUIT_RESUME_DETAIL_BATCH_LIMIT:20}
+    # 轮内简历详情读取总预算(跨岗位合计,2026-09-28 晚工作量翻倍 30→60)
+    resume-detail-round-limit: ${AUTO_RECRUIT_RESUME_DETAIL_ROUND_LIMIT:60}
+    # 相邻两次简历详情读取的最小间隔(毫秒,读操作轻节流;2026-09-28 由 1000 放缓至 2000)
+    resume-detail-interval-millis: ${AUTO_RECRUIT_RESUME_DETAIL_INTERVAL_MILLIS:2000}
+    # 平摊窗口(分钟):整点轮次在窗口内匀速执行全部动作,到期顺延下轮(2026-09-28 节拍改造)
+    spread-minutes: ${AUTO_RECRUIT_SPREAD_MINUTES:50}
+    # 相邻动作最小间隔(毫秒;自适应节拍提速下限)
+    pace-millis: ${AUTO_RECRUIT_PACE_MILLIS:30000}
+    # 相邻动作最大间隔(毫秒;自适应节拍降速上限)
+    max-pace-millis: ${AUTO_RECRUIT_MAX_PACE_MILLIS:120000}
+    # 轮内会话列表刷新间隔(分钟)
+    poll-list-interval-minutes: ${AUTO_RECRUIT_POLL_LIST_INTERVAL_MINUTES:15}
+    # 推荐任务创建/执行最小间隔(分钟;防"接力"暴发)
+    recommend-gap-minutes: ${AUTO_RECRUIT_RECOMMEND_GAP_MINUTES:8}
+    # 整点轮次 cron(2026-09-29 时段延长为 06:00–23:00)
+    round-cron: ${AUTO_RECRUIT_ROUND_CRON:0 0 6-23 * * *}
+    # 4-5 星专道窗口 cron(每小时 :51–:59,不占轮内预算;2026-09-29)
+    star-tail-cron: ${AUTO_RECRUIT_STAR_TAIL_CRON:0 51 6-22 * * *}
+    # 疑似拦截冻结退避时长(分钟;首次命中冻结、到期复测一次;0=立即熔断)
+    risk-probe-backoff-minutes: ${AUTO_RECRUIT_RISK_PROBE_BACKOFF_MINUTES:15}
+    # 会话列表拉取失败后的轮内重试等待(毫秒)
+    poll-retry-delay-millis: ${AUTO_RECRUIT_POLL_RETRY_DELAY_MILLIS:20000}
+  storage:
+    type: ${STORAGE_TYPE:minio}
+    minio:
+      endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+      access-key: ${MINIO_ACCESS_KEY:hr-agent-minio}
+      secret-key: ${MINIO_SECRET_KEY:hr-agent-minio-pass}
+      bucket: ${MINIO_BUCKET:resumes}

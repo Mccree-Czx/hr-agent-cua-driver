@@ -1,0 +1,33 @@
+# IDE / editor
+.qoder/
+.idea/
+.vscode/
+*.iml
+
+# Java
+backend/target/
+*.class
+
+# Node
+frontend/node_modules/
+frontend/dist/
+npm-debug.log*
+
+# 前端构建产物(由 deploy/build-frontend.sh 生成,不提交)
+backend/src/main/resources/static/
+
+# OS
+.DS_Store
+
+# Local secrets / runtime
+*.local.yml
+application-local.yml
+.env
+runtime/
+
+# liepin-cli fork 的内嵌 git 历史备份(如需 fork 独立仓库时可恢复)
+tools/.liepin-cli-git-history/
+
+# 构建打包产物
+tools/*.tgz
+*.tgz

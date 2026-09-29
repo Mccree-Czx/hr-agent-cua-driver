@@ -1,0 +1,41 @@
+# 单机集中式部署:MySQL + MinIO
+# 用法:
+#   1. 修改环境变量(docker compose 支持 .env 文件)
+#   2. docker compose up -d
+#   3. sh init-minio.sh 初始化简历存储桶
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: hr-agent-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hr-agent-root}
+      MYSQL_DATABASE: hr_agent
+      MYSQL_USER: hr_agent
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hr-agent-pass}
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ../backend/src/main/resources/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+
+  minio:
+    image: minio/minio:latest
+    container_name: hr-agent-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-hr-agent-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-hr-agent-minio-pass}
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # 控制台
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+
+volumes:
+  mysql-data:
+  minio-data:

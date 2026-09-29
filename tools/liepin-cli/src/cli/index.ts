@@ -1,0 +1,290 @@
+#!/usr/bin/env node
+/**
+ * 猎聘 CLI 入口
+ */
+
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { config } from '../config.js';
+import { CdpBrowser, probeRemoteHeadless } from '../browser/cdp_browser.js';
+import { loginCommand } from '../toolset/login.js';
+import { searchCommand } from '../toolset/search.js';
+import { chatlistCommand } from '../toolset/chatlist.js';
+import { chatmsgCommand } from '../toolset/chatmsg.js';
+import { recommendCommand } from '../toolset/recommend.js';
+import { talentCommand } from '../toolset/talent.js';
+import { resumeCommand } from '../toolset/resume.js';
+import { greetCommand } from '../toolset/greet.js';
+import { requestPhoneCommand, requestResumeCommand } from '../toolset/request.js';
+import { joblistCommand } from '../toolset/joblist.js';
+import { jobpublishCommand } from '../toolset/jobpublish.js';
+import { jobdeleteCommand } from '../toolset/jobdelete.js';
+import { attachDownloadCommand } from '../toolset/attach-download.js';
+import { attachFetchCommand } from '../toolset/attach-fetch.js';
+import { skillCommand } from '../toolset/skill.js';
+import { quitCommand } from '../toolset/quit.js';
+import { acquireBusyLock, releaseBusyLock } from '../common/busy_lock.js';
+
+/** 从包根 package.json 读取版本号（dist/cli/index.js -> ../../package.json） */
+const pkg = JSON.parse(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'package.json'), 'utf-8'),
+);
+
+/** 命令定义 */
+interface Command {
+  name: string;
+  description: string;
+  args: Array<{
+    name: string;
+    type: string;
+    required?: boolean;
+    positional?: boolean;
+    default?: any;
+    help: string;
+  }>;
+  columns: Array<{
+    header: string;
+    key: string;
+    width: number;
+    noTruncate?: boolean;
+  }>;
+  requiresPage?: boolean;
+  func: (page: any, options: any) => Promise<any>;
+}
+
+/** 所有命令 */
+const commands: Command[] = [
+  loginCommand,
+  searchCommand,
+  chatlistCommand,
+  chatmsgCommand,
+  recommendCommand,
+  talentCommand,
+  resumeCommand,
+  greetCommand,
+  requestPhoneCommand,
+  requestResumeCommand,
+  joblistCommand,
+  jobpublishCommand,
+  jobdeleteCommand,
+  attachDownloadCommand,
+  attachFetchCommand,
+  skillCommand,
+  quitCommand,
+];
+
+/** 显示帮助信息 */
+function showHelp(): void {
+  console.log(`
+猎聘 CLI - 猎聘自动化命令行工具
+
+用法:
+  liepin <command> [options]
+
+命令:
+${commands.map(cmd => `  ${cmd.name.padEnd(15)} ${cmd.description}`).join('\n')}
+
+选项:
+  --help, -h      显示帮助信息
+  --version, -v   显示版本信息
+  --json          以 JSON 格式输出（AI Agent 友好）
+
+示例:
+  liepin search 前端工程师
+  liepin search 前端工程师 --city 北京 --experience 3-5年
+  liepin resume <简历ID>          # 简历ID 取自 search 结果的 resume_id
+  liepin chatlist
+  liepin recommend
+`);
+}
+
+/** 显示版本信息 */
+function showVersion(): void {
+  console.log(`liepin-cli v${pkg.version}`);
+}
+
+/** 解析命令行参数 */
+function parseArgs(args: string[]): { command: string; options: Record<string, any> } {
+  let command = '';
+  const options: Record<string, any> = {};
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    
+    if (arg === '--help' || arg === '-h') {
+      options.help = true;
+    } else if (arg === '--version' || arg === '-v') {
+      options.version = true;
+    } else if (arg.startsWith('--')) {
+      // 支持 --key=value（值可含 -- 开头，如 --message=--紧急）
+      const eq = arg.indexOf('=');
+      if (eq !== -1) {
+        options[arg.slice(2, eq)] = arg.slice(eq + 1);
+      } else {
+        const key = arg.slice(2);
+        const value = args[i + 1];
+        if (value !== undefined && !value.startsWith('--')) {
+          options[key] = value;
+          i++;
+        } else {
+          options[key] = true;
+        }
+      }
+    } else if (!command) {
+      command = arg;
+    } else if (!options.positional) {
+      options.positional = arg;
+    }
+  }
+
+  return { command, options };
+}
+
+/** 格式化输出 */
+function formatOutput(
+  data: any,
+  columns: Array<{ header: string; key: string; width: number; noTruncate?: boolean }>,
+  asJson: boolean = false,
+): void {
+  if (asJson) {
+    console.log(JSON.stringify(data, null, 2));
+    return;
+  }
+
+  if (Array.isArray(data)) {
+    // 表格输出
+    const header = columns.map(col => col.header.padEnd(col.width)).join(' | ');
+    console.log(header);
+    console.log('-'.repeat(header.length));
+
+    for (const item of data) {
+      const row = columns.map(col => {
+        const value = String(item[col.key] || '');
+        // ID 类标识符截断后无法直接喂给下游命令，只补齐不截断（issue #14）
+        if (col.noTruncate) return value.padEnd(col.width);
+        return value.length > col.width ? value.slice(0, col.width - 3) + '...' : value.padEnd(col.width);
+      }).join(' | ');
+      console.log(row);
+    }
+  } else {
+    // 详情输出
+    for (const [key, value] of Object.entries(data)) {
+      const column = columns.find(col => col.key === key);
+      const header = column?.header ?? key;
+      console.log(`${header}: ${value}`);
+    }
+  }
+}
+
+/** 主函数 */
+async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+  
+  if (args.length === 0) {
+    showHelp();
+    return;
+  }
+
+  const { command, options } = parseArgs(args);
+
+  if (options.help) {
+    showHelp();
+    return;
+  }
+
+  if (options.version) {
+    showVersion();
+    return;
+  }
+
+  // 支持裸 `help` 子命令（等价于 --help）
+  if (command === 'help') {
+    showHelp();
+    return;
+  }
+
+  // 查找命令
+  const cmd = commands.find(c => c.name === command);
+  if (!cmd) {
+    console.error(`错误: 未知命令 '${command}'`);
+    console.error('使用 --help 查看可用命令');
+    process.exit(1);
+  }
+
+  // 解析命令参数
+  const cmdOptions: Record<string, any> = {};
+  
+  // 处理位置参数
+  if (options.positional) {
+    const requiredArg = cmd.args.find(a => a.required && a.positional);
+    if (requiredArg) {
+      cmdOptions[requiredArg.name] = options.positional;
+    }
+  }
+
+  // 处理命名参数
+  for (const arg of cmd.args) {
+    if (options[arg.name] !== undefined) {
+      cmdOptions[arg.name] = options[arg.name];
+    } else if (arg.default !== undefined) {
+      cmdOptions[arg.name] = arg.default;
+    }
+  }
+
+  // 验证必需参数
+  for (const arg of cmd.args) {
+    if (arg.required && !cmdOptions[arg.name]) {
+      console.error(`错误: 缺少必需参数 '${arg.name}'`);
+      console.error(`使用 liepin ${command} --help 查看帮助`);
+      process.exit(1);
+    }
+  }
+
+  const requiresPage = cmd.requiresPage !== false;
+
+  // login 端口上没有实例时才需要直接拉一只有头的（扫码看不见就没法登录）。
+  // **已有实例一律不动**：先由 login 命令探一次登录态，还有效就直接复用，确实要人工
+  // 扫码时它自己会把无头换成有头。以前无条件关掉重启，把"重试登录"变成了每次都重启
+  // 浏览器的高风险动作，是 issue #21 里账号被判「行为异常」的直接推手。
+  if (command === 'login' && (await probeRemoteHeadless()) === null) {
+    process.env.LIEPIN_HEADLESS = 'false';
+  }
+
+  // 告诉面板「这条命令正在操作这只浏览器」：面板切换有头/无头要关掉浏览器重开，
+  // 会打断我们，所以它需要一个能看见的信号（见 common/busy_lock.ts）。
+  acquireBusyLock(command);
+
+  // 连上浏览器（端口上已有实例就复用，没有才拉起）
+  const browser = requiresPage ? new CdpBrowser() : null;
+  let page: any = null;
+
+  try {
+    if (browser) {
+      page = await browser.launch();
+    }
+
+    // 执行命令
+    const result = await cmd.func(page, cmdOptions);
+
+    // 格式化输出
+    formatOutput(result, cmd.columns, options.json === true);
+  } catch (error) {
+    console.error('错误:', error instanceof Error ? error.message : String(error));
+    // 让调用方（脚本 / AI Agent）无需解析文案即可判别错误类别：
+    // 2 = 登录态失效（AuthExpiredError），3 = 风控/安全异常（RiskControlError）
+    const name = error instanceof Error ? error.name : '';
+    process.exit(name === 'AuthExpiredError' ? 2 : name === 'RiskControlError' ? 3 : 1);
+  } finally {
+    // 只断 CDP，不关浏览器：跨命令常驻，下条命令直连同一只实例（同一登录态），
+    // DSH 面板的镜像也才有东西可连。要真正关掉用 `liepin quit`。
+    browser?.disconnect();
+    releaseBusyLock();
+  }
+}
+
+// 运行主函数
+main().catch(error => {
+  console.error('致命错误:', error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});

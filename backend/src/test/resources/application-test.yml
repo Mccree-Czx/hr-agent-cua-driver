@@ -1,0 +1,30 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:hr_agent_test;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:sql/schema-h2.sql
+
+hr-agent:
+  scheduler:
+    enabled: false
+  scoring:
+    greet-interval-seconds: 0
+  auto-recruit:
+    # 测试默认种子为开启(库中无值时);关闭语义的用例自行 setEnabled(false)
+    enabled: true
+    poll-retry-delay-millis: 1
+  storage:
+    type: local
+    local-base-dir: target/test-resumes
+  jwt:
+    secret: test-secret-key-for-unit-tests-only-1234567890
+    expire-hours: 1
+  auth:
+    whitelist:
+      - /api/auth/login
+      - /error
