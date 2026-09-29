@@ -9,7 +9,7 @@
 import { exitCodeOf, truncate } from "../contract.js";
 import type { DriverConfig } from "../config.js";
 import { DriverClient } from "../cua/driver-client.js";
-import { attachBrowserSession } from "../cua/session.js";
+import { assertDesktopUnlocked, attachBrowserSession } from "../cua/session.js";
 import type { UiContext } from "../cua/ui-actions.js";
 import { ensureImPanel, navigateChecked, resumeDetailUrl, sendMessageIntoIm, waitResumePageReady } from "../flows/common.js";
 import { runGreet } from "../flows/greet.js";
@@ -36,6 +36,8 @@ export async function withContext(
   const log = makeLogger(json);
   const client = new DriverClient({ bin: cfg.bin, session: cfg.session, timeoutMs: cfg.callTimeoutMs });
   try {
+    // 锁屏快速失败:持续部署场景下无人值守锁屏会导致渲染冻结/快照静默降级
+    await assertDesktopUnlocked(client);
     const session = await attachBrowserSession(client, cfg);
     log(`已附加窗口 pid=${session.window.pid} window=${session.window.windowId}`);
     const ctx: UiContext = { client, session, dryRun: args.flags["dry-run"] === true, log, sleep };

@@ -192,6 +192,30 @@ export async function dismissDebugConsentPrompts(client: DriverClient): Promise<
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * 桌面锁定快速失败(2026-09-29 真机:锁屏下 Chrome 内容区渲染冻结,
+ * 快照只剩导航骨架、列表/消息为空——必须明确报错而非让上层收到诡异空数据)。
+ * 通过 start_session(幂等)的 desktop_unlocked 字段判定;检查本身失败不阻断。
+ * 返回 true=已检查且未锁定/false=无法判定(调用方自行决定)。
+ */
+export async function assertDesktopUnlocked(client: DriverClient): Promise<boolean> {
+  let unlocked: unknown;
+  try {
+    const res = await client.callTool("start_session", {});
+    unlocked = res.data.desktop_unlocked;
+  } catch {
+    return false; // 检查失败不阻断主流程(attach 自身会处理 session 问题)
+  }
+  if (unlocked === false) {
+    throw new CuaError(
+      "failed",
+      "Windows 桌面已锁定(desktop_unlocked=false):锁屏下 UI 自动化会因渲染冻结而失效," +
+        "请解锁桌面后重试(保持会话解锁登录是 UI 通道的既有约束)",
+    );
+  }
+  return true;
+}
+
+/**
  * 附加浏览器会话(含生命周期):
  * 1) 先清 consent 干扰窗;
  * 2) attach;失败且允许启动时:启动账号 Chrome → 轮询等待窗口就绪(默认 30s)。
@@ -201,6 +225,8 @@ export async function ensureBrowserSession(
   cfg: DriverConfig,
   opts: { launchIfMissing?: boolean; waitMs?: number } = {},
 ): Promise<BrowserSession> {
+  // 锁屏快速失败(渲染冻结会导致快照/抽取静默降级;非锁定错误不阻断)
+  await assertDesktopUnlocked(client);
   await dismissDebugConsentPrompts(client).catch(() => 0);
   try {
     return await attachBrowserSession(client, cfg);

@@ -154,4 +154,6 @@ UI 输出形状:
 - **Chrome 调试授权确认框**(要允许远程调试吗)在新窗口/新目标时**高频再现**;`ensureBrowserSession` 先清障再附加;多窗口共存时偶发 `no CDP target correlates` 或 attach 超时——重跑一次通常可恢复(观测到 3 次自愈);
 - 用户可能同时使用 Chrome(新窗口/关闭),联调应在每步前用 ensure 重新附加,不缓存窗口状态;
 - **会话标签迁移(已实装)**:标签闲置死亡后 start_session 可能返回 `session_unavailable`(不可复活),旧逻辑仅覆盖 `session has ended` 导致命令全挂;driver-client 现自动逐档派生 `base-1..base-3` 新标签并重试一次;真机验证:死亡 base(hr-agent) 下 `joblist --json` exit 0;注意标签在同一 CLI 调用内一致,target/ref 不跨调用复用,故迁移安全;
-- **附件下载入口(部分确认)**:会话页"收到简历"视图底部有批量条「全部勾选 + 通过筛选 + 不合适 + 浏览简历」;"浏览简历"疑为简历/附件查看入口(viewer 内下载按钮待用户空闲时验证)。
+- **附件下载入口(部分确认)**:会话页"收到简历"视图底部有批量条「全部勾选 + 通过筛选 + 不合适 + 浏览简历」;"浏览简历"疑为简历/附件查看入口(viewer 内下载按钮待用户空闲时验证);
+- **桌面锁定(锁屏)快速失败**:锁屏下 Chrome 内容区渲染冻结(快照只剩导航骨架、列表/消息为空,refs 约 99),driver `desktop_unlocked=false`;驱动已在命令入口(withContext)与 ensure 流程快速失败并给出明确错误(真机验证 EXIT=1:"Windows 桌面已锁定...");无人值守部署需保持会话解锁;
+- **joblist records(结构化首切片,W6 适配起点)**:`extractJobRecords` 输出 `[{name,location,salary,refreshed_at,status}]`(行边界=下一职位行 link;字段缺失置 null;不含 jobId——列表文本层不可得,id 由点击穿透补充);`extraction_status="validated"` 表示 records 非空;records 抽取对渲染完整度敏感(锁屏/未加载时为空),后续命令(recommend/chatlist/chatmsg/search)按同模式逐步补齐。

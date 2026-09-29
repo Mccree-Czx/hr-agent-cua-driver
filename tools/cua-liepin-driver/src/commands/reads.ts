@@ -8,6 +8,7 @@
 
 import type { DriverConfig } from "../config.js";
 import { flagValue, type ParsedArgs } from "../cli/args.js";
+import { extractJobRecords } from "../cua/extract.js";
 import {
   runReadChatMsg,
   runReadList,
@@ -111,6 +112,15 @@ export async function handleJoblist(cfg: DriverConfig, args: ParsedArgs): Promis
     return 1;
   }
   return withContext(cfg, args, async (ctx) => {
-    printRaw(await runReadList(ctx, { pageUrl: url, captureRefs, idParam, dryRun, label: "职位列表页" }));
+    printRaw(
+      await runReadList(ctx, {
+        pageUrl: url,
+        captureRefs,
+        idParam,
+        dryRun,
+        label: "职位列表页",
+        recordsExtractor: (snap) => extractJobRecords(snap),
+      }),
+    );
   });
 }

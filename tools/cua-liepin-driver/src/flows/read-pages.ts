@@ -25,8 +25,10 @@ export interface RawPageOutcome {
   page_url: string;
   count: number;
   lines: string[];
-  extraction_status: "unvalidated";
+  extraction_status: "unvalidated" | "validated";
   captures: Capture[];
+  /** 结构化记录(UI 抽取契约;按命令提供,缺省不输出) */
+  records?: unknown[];
   attachment_hint?: boolean;
   steps: string[];
 }
@@ -114,12 +116,14 @@ export interface ReadListInput {
   dryRun: boolean;
   /** 日志称谓(如"推荐列表页"/"职位列表页") */
   label: string;
+  /** 结构化 records 抽取器(joblist 等提供;2026-09-29 W6 适配起点) */
+  recordsExtractor?: (snap: SnapshotResult) => unknown[];
 }
 
 /** 列表页通用抽取(+ 可选 ID 穿透;穿透含 URL 参数与预览层「简历编号」双通道) */
 export async function runReadList(ctx: UiContext, input: ReadListInput): Promise<RawPageOutcome> {
   const steps: string[] = [];
-  const { lines } = await readPage(ctx, input.pageUrl);
+  const { snap, lines } = await readPage(ctx, input.pageUrl);
   steps.push(`${input.label}文本行 ${lines.length}`);
   const captures = input.captureRefs.length > 0
     ? await captureIdsByClickThrough(ctx, input.captureRefs, input.pageUrl, input.idParam, input.dryRun)
@@ -128,7 +132,19 @@ export async function runReadList(ctx: UiContext, input: ReadListInput): Promise
     const hit = captures.filter((c) => c.id !== null).length;
     steps.push(`穿透 ${captures.length} 个,解析到 ID ${hit} 个`);
   }
-  return { page_url: input.pageUrl, count: lines.length, lines, extraction_status: "unvalidated", captures, steps };
+  const records = input.recordsExtractor !== undefined ? input.recordsExtractor(snap) : undefined;
+  if (records !== undefined) {
+    steps.push(`结构化记录 ${records.length} 条`);
+  }
+  return {
+    page_url: input.pageUrl,
+    count: lines.length,
+    lines,
+    extraction_status: records !== undefined && records.length > 0 ? "validated" : "unvalidated",
+    captures,
+    records,
+    steps,
+  };
 }
 
 /** 推荐列表页抽取(+ 可选 ID 穿透) */

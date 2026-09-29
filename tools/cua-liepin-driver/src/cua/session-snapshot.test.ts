@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DriverClient, type ToolCallResult } from "./driver-client.js";
-import { mergeSnapshotRefs, resolveChromePath, snapshot, type BrowserSession } from "./session.js";
+import { assertDesktopUnlocked, mergeSnapshotRefs, resolveChromePath, snapshot, type BrowserSession } from "./session.js";
 import type { DriverConfig } from "../config.js";
 
 const SESSION: BrowserSession = {
@@ -52,6 +52,14 @@ function scriptedClient(entries: ScriptEntry[]): {
 function ref(r: string, name: string): Record<string, unknown> {
   return { ref: r, role: "statictext", name, actions: [] };
 }
+
+test("assertDesktopUnlocked:锁屏(false)抛明确错误;未锁定(true)通过", async () => {
+  const locked = scriptedClient([{ payload: { desktop_unlocked: false, session: "test" } }]);
+  await assert.rejects(assertDesktopUnlocked(locked.client), /桌面已锁定/);
+
+  const unlocked = scriptedClient([{ payload: { desktop_unlocked: true } }]);
+  assert.equal(await assertDesktopUnlocked(unlocked.client), true);
+});
 
 test("mergeSnapshotRefs:合并 refs 与 content_refs 并按 ref 去重", () => {
   const merged = mergeSnapshotRefs({

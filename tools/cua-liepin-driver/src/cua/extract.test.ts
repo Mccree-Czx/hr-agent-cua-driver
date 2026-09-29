@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   collectLines,
   dedupeConsecutive,
+  extractJobRecords,
   extractResumeNo,
   extractWantTitles,
   hasAttachmentHint,
@@ -16,7 +17,7 @@ import {
   textLinesOf,
   valueAfterColon,
 } from "./extract.js";
-import type { SnapshotResult } from "./session.js";
+import type { SnapshotRef, SnapshotResult } from "./session.js";
 
 function snapOf(names: Array<string | null>, roles?: string[]): SnapshotResult {
   return {
@@ -134,6 +135,71 @@ test("字段模式:薪资/年限/学历", () => {
   assert.equal(matchSalary("15-20k×14薪"), "15-20k");
   assert.equal(matchExperience("经验 5-10年"), "5-10年");
   assert.equal(matchEducation("本科及以上"), "本科");
+});
+
+function snapRefs(refs: Array<Partial<SnapshotRef> & { name: string | null }>): SnapshotResult {
+  return {
+    snapshotId: "p1",
+    outline: "",
+    page: { title: "职位管理", url: "https://lpt.liepin.com/job/manager" },
+    refs: refs.map((r, i) => ({
+      ref: r.ref ?? `p1:${i}`,
+      role: r.role ?? "statictext",
+      name: r.name,
+      actions: r.actions ?? [],
+      visibility: r.visibility ?? "in_viewport",
+    })),
+  };
+}
+
+test("extractJobRecords:真机样本结构(职位名+地点/薪资/刷新/状态)且排除导航 link", () => {
+  const snap = snapRefs([
+    { name: "人才推荐", role: "link", actions: ["click"] },
+    { name: "海外ToB渠道销售（出海品牌）", role: "link", actions: ["click"] },
+    { name: "职位管理" },
+    { name: "上海-黄浦区" },
+    { name: "15-30k" },
+    { name: "2026.09.29刷新" },
+    { name: "沟通中" },
+    { name: "待看/收到简历" },
+  ]);
+  const records = extractJobRecords(snap);
+  assert.equal(records.length, 1);
+  assert.deepEqual(records[0], {
+    name: "海外ToB渠道销售（出海品牌）",
+    location: "上海-黄浦区",
+    salary: "15-30k",
+    refreshed_at: "2026.09.29刷新",
+    status: "沟通中",
+  });
+});
+
+test("extractJobRecords:多行边界不串行(字段归属各自职位)", () => {
+  const snap = snapRefs([
+    { name: "海外ToB渠道销售（出海品牌）", role: "link", actions: ["click"] },
+    { name: "北京-朝阳区" },
+    { name: "20-30k" },
+    { name: "Java后端开发工程师", role: "link", actions: ["click"] },
+    { name: "深圳-南山区" },
+    { name: "25-35k" },
+    { name: "2026.09.28刷新" },
+    { name: "招聘中" },
+  ]);
+  const records = extractJobRecords(snap);
+  assert.equal(records.length, 2);
+  assert.equal(records[0].location, "北京-朝阳区");
+  assert.equal(records[0].salary, "20-30k");
+  assert.equal(records[0].status, null, "第二行的状态不得归入第一行");
+  assert.equal(records[1].name, "Java后端开发工程师");
+  assert.equal(records[1].location, "深圳-南山区");
+  assert.equal(records[1].salary, "25-35k");
+  assert.equal(records[1].status, "招聘中");
+});
+
+test("extractJobRecords:待发布行缺字段时置 null(不伪造)", () => {
+  const snap = snapRefs([{ name: "销售经理", role: "link", actions: ["click"] }]);
+  const records = extractJobRecords(snap);
+  assert.deepEqual(records, [{ name: "销售经理", location: null, salary: null, refreshed_at: null, status: null }]);
 });
 
 test("hasAttachmentHint:简历/附件卡片文案", () => {

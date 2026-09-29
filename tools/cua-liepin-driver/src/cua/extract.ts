@@ -7,7 +7,7 @@
  * - 所有函数为纯函数,便于用快照 fixture 单测。
  */
 
-import type { SnapshotResult } from "./session.js";
+import type { SnapshotRef, SnapshotResult } from "./session.js";
 
 /** 一行文本(ref 与角色保留,便于诊断与后续动作定位) */
 export interface TextLine {
@@ -258,4 +258,88 @@ export function matchEducation(text: string): string | null {
 /** 附件卡片文案迹象(chatmsg 附件检测;旧 API 路线需解 bizType=7 载荷,UI 更直观) */
 export function hasAttachmentHint(lines: string[]): boolean {
   return lines.some((l) => /简历|附件/.test(l) && /\.(pdf|docx?|doc)|附件|简历/.test(l));
+}
+
+/** 职位行与字段抽取(joblist 结构化 records;2026-09-29 真机样本推导) */
+
+/** 职位行 link 排除名单(导航/分页/入口按钮等非职位行) */
+export const JOB_ROW_EXCLUDE = [
+  "人才推荐", "职位管理", "搜索人才", "沟通", "人才管理",
+  "猎头服务", "提效服务", "问 Lily", "意向人选", "急聘置顶", "火爆刷",
+];
+
+/** 单条职位记录(UI 抽取契约:v1 不含 jobId——列表行文本层无法获得,
+ *  id 由点击穿透(captureIdsByClickThrough)补充) */
+export interface JobRecord {
+  name: string;
+  location: string | null;
+  salary: string | null;
+  refreshed_at: string | null;
+  status: string | null;
+}
+
+/** 是否职位行 link(与 jobdelete 的行识别语义一致) */
+function isJobRow(ref: SnapshotRef): boolean {
+  return (
+    ref.role === "link" &&
+    ref.name !== null &&
+    ref.name.length >= 4 &&
+    ref.name.length <= 40 &&
+    (ref.visibility === "in_viewport" || ref.visibility === "near_viewport") &&
+    !JOB_ROW_EXCLUDE.some((n) => (ref.name as string).includes(n)) &&
+    !/^\d+\s*\/\s*\d+$/.test(ref.name)
+  );
+}
+
+/** 定位职位行 link 的索引(DOM 序,用于 records 行边界划分) */
+export function jobRowIndexes(refs: SnapshotRef[]): number[] {
+  const out: number[] = [];
+  refs.forEach((r, i) => {
+    if (isJobRow(r)) {
+      out.push(i);
+    }
+  });
+  return out;
+}
+
+/**
+ * 抽取职位记录列表。
+ * 真机样本(2026-09-29)单行结构:职位名(link) … 地点("上海-黄浦区") →
+ * 薪资("15-30k") → 刷新时间("2026.09.29刷新") → 状态("沟通中");
+ * 行边界 = 下一个职位行 link 索引(无则向后最多 60 节点);
+ * 字段在区间内各取首个匹配,缺失为 null(不伪造)。
+ */
+export function extractJobRecords(snap: SnapshotResult): JobRecord[] {
+  const refs = snap.refs;
+  const idxs = jobRowIndexes(refs);
+  const records: JobRecord[] = [];
+  for (let k = 0; k < idxs.length; k++) {
+    const start = idxs[k];
+    const end = k + 1 < idxs.length ? idxs[k + 1] : Math.min(refs.length, start + 60);
+    const record: JobRecord = {
+      name: refs[start].name as string,
+      location: null,
+      salary: null,
+      refreshed_at: null,
+      status: null,
+    };
+    for (let i = start + 1; i < end; i++) {
+      const name = refs[i].name;
+      if (name === null) {
+        continue;
+      }
+      const text = name.trim();
+      if (record.location === null && /^[\u4e00-\u9fa5]{2,10}-[\u4e00-\u9fa5]{2,10}$/.test(text)) {
+        record.location = text;
+      } else if (record.salary === null && matchSalary(text) !== null) {
+        record.salary = matchSalary(text);
+      } else if (record.refreshed_at === null && /\d{4}\.\d{2}\.\d{2}\s*刷新$/.test(text)) {
+        record.refreshed_at = text;
+      } else if (record.status === null && /^(沟通中|已下线|招聘中|待审核|审核中|已结束|已关闭)$/.test(text)) {
+        record.status = text;
+      }
+    }
+    records.push(record);
+  }
+  return records;
 }
