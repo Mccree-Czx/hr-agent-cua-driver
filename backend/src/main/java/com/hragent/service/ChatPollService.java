@@ -261,23 +261,45 @@ public class ChatPollService {
     /** 处理单个会话;返回是否已产生落库/外发动作 */
     private boolean handleSession(LiepinAccount account, JsonNode session, Duration timeout) {
         String imId = session.path("im_id").asText("").trim();
-        if (imId.isEmpty()) {
-            log.warn("会话缺少 im_id,跳过(不猜测)");
+        String name = session.path("name").asText("").trim();
+        if (imId.isEmpty() && name.isEmpty()) {
+            log.warn("会话缺少 im_id 与 name,跳过(不猜测)");
             return false;
         }
         String direction = session.path("direction").asText("");
-        // 已知候选人匹配:优先 im_id,失败时回退 user_id(终审 I2:snapshot 缺 im_id 时不致断链)
-        Candidate candidate = findCandidateByImId(imId);
+        // 已知候选人匹配:优先 im_id → user_id → name(UI 通道无 im_id 时的会话名键回退)
+        Candidate candidate = imId.isEmpty() ? null : findCandidateByImId(imId);
         if (candidate == null) {
             String userId = session.path("user_id").asText("").trim();
             if (!userId.isEmpty()) {
                 candidate = findCandidateByUserId(userId);
             }
         }
+        if (candidate == null && !name.isEmpty()) {
+            candidate = findCandidateByName(name);
+        }
         if (candidate != null) {
             return handleKnownCandidate(account, candidate, imId, direction, session, timeout);
         }
         return handleStranger(account, session, imId, direction, timeout);
+    }
+
+    /**
+     * 会话名键匹配(UI 通道适配:chatlist 的 records 无对方 im_id,以会话名定位候选人)。
+     * 同名多命中时跳过并记日志(保守,不猜测)。
+     */
+    private Candidate findCandidateByName(String name) {
+        List<Candidate> list = candidateMapper.selectList(new LambdaQueryWrapper<Candidate>()
+                .eq(Candidate::getName, name)
+                .last("LIMIT 2"));
+        if (list.isEmpty()) {
+            return null;
+        }
+        if (list.size() > 1) {
+            log.warn("会话名「{}」匹配到多个候选人,跳过(不猜测)", name);
+            return null;
+        }
+        return list.get(0);
     }
 
     /**
@@ -316,6 +338,11 @@ public class ChatPollService {
      */
     private boolean fetchAttachmentIfNew(LiepinAccount account, Candidate candidate, String imId,
                                          JsonNode session, Duration timeout) {
+        if (imId.isEmpty()) {
+            // UI 通道适配:无 im_id 时附件探测(attach-fetch UI 化)尚未就绪,跳过并留痕
+            log.info("UI 通道无 im_id,附件探测暂不可用,跳过(候选人 {})", candidate.getId());
+            return false;
+        }
         GreetingRecord record = greetingMapper.selectOne(new LambdaQueryWrapper<GreetingRecord>()
                 .eq(GreetingRecord::getCandidateId, candidate.getId())
                 .last("LIMIT 1"));
@@ -513,6 +540,12 @@ public class ChatPollService {
     private boolean handleStranger(LiepinAccount account, JsonNode session, String imId,
                                    String direction, Duration timeout) {
         if (!"1".equals(direction)) {
+            return false;
+        }
+        if (imId.isEmpty()) {
+            // UI 通道适配:陌生人链路依赖 chatmsg 结构化消息(附件卡片/身份标识),UI 消息解析未就绪时跳过
+            log.warn("UI 通道无 im_id,陌生人会话消息解析未就绪,跳过(会话 {})",
+                    session.path("name").asText(""));
             return false;
         }
         List<JsonNode> messages = commandService.chatmsg(account, imId, timeout);

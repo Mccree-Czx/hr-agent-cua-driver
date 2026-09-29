@@ -181,3 +181,11 @@ UI 输出形状:
 | attach-fetch / attach-download | ✓(三态+签名校验) | ✗ | ✓(三态契约) | viewer 下载按钮路径待验证(入口线索:会话"收到简历"视图批量条「全部勾选+浏览简历」) |
 
 **结论**:切换阻塞项 = ① search(页面结构与 records) ② chatlist/chatmsg(im_id 通道设计决策) ③ attach viewer 下载 ④ request-resume live click。解锁后优先级:attach viewer → joblist/recommend `--with-ids` 复验 → search 探索 → chatlist/chatmsg 样本采集。
+
+### 后端会话名键适配(2026-09-29,已完成第一步)
+- ChatPollService.handleSession 匹配链扩展为 **im_id → user_id → name**(新增 findCandidateByName;同名多命中跳过+日志;im_id 与 name 均缺才跳过);
+- fetchAttachmentIfNew:无 im_id 时跳过附件探测(attach UI 化未就绪,诚实留痕,不传空键进下游);
+- handleStranger:无 im_id 时跳过陌生人消息解析(依赖 chatmsg 结构化消息,未就绪);
+- ResumeCollectService.checkReply:name 回退(仅 userId/imId 均空时生效,避免重名误判);
+- 测试:后端 309/309 全绿(+3:name 键命中 known 链/同名歧义跳过/双空跳过)。
+- **剩余信号缺口(切换前必补)**:ChatPollService 的 direction 与 oppositeRead 依赖 legacy 会话元数据;UI chatlist records 尚无这两个字段。direction(对方最后发言)与会话级已读的 UI 判定需 chatmsg 消息结构化 + 真机校准后补入 records。

@@ -142,11 +142,15 @@ public class ResumeCollectService {
         JsonNode snapshot = JsonExtractor.parse(candidate.getSnapshot()).orElse(null);
         String userId = snapshot == null ? "" : snapshot.path("user_id").asText("");
         String imId = snapshot == null ? "" : snapshot.path("im_id").asText("");
+        String name = snapshot == null ? "" : snapshot.path("name").asText("");
         for (JsonNode chat : chats) {
             String chatUserId = chat.path("user_id").asText("");
             String chatImId = chat.path("im_id").asText("");
+            // UI 通道回退:chatlist records 无 im_id/user_id,以会话名匹配(仅前两者均空时生效,避免重名误判)
             boolean samePerson = (!userId.isBlank() && userId.equals(chatUserId))
-                    || (!imId.isBlank() && imId.equals(chatImId));
+                    || (!imId.isBlank() && imId.equals(chatImId))
+                    || (userId.isBlank() && imId.isBlank() && !name.isBlank()
+                            && name.equals(chat.path("name").asText("")));
             if (!samePerson) {
                 continue;
             }

@@ -793,4 +793,54 @@ class ChatPollServiceTest {
         node.put("via", "api");
         return node;
     }
+
+    // ---------- UI 通道适配:无 im_id 时按会话名匹配候选人(会话名键) ----------
+
+    @Test
+    void uiChannelMatchesCandidateBySessionName() throws Exception {
+        Candidate candidate = knownCandidate("", "温女士");
+        candidate.setResumeId("r-wen");
+        Jd jd = confirmedJd("测试岗位", "99999");
+        candidate.setJdId(jd.getId());
+        candidateMapper.updateById(candidate);
+        greeting(candidate);
+
+        // UI chatlist records 形态:无 im_id,有 name/direction
+        stubChatlist("{\"name\":\"温女士\",\"direction\":\"1\"}");
+        when(commandService.requestResume(any(), eq("r-wen"), any(), any()))
+                .thenReturn(Optional.of(objectMapper.readTree("{\"success\":true,\"confirmed\":true}")));
+
+        int processed = chatPollService.pollOnce(account);
+
+        assertEquals(1, processed, "会话名键命中 known 链,索要应计为已处理");
+        verify(commandService).requestResume(any(), eq("r-wen"), any(), any());
+        verify(commandService, never()).attachFetch(any(), anyString(), anyString(), any());
+        verify(commandService, never()).chatmsg(any(), anyString(), any());
+    }
+
+    @Test
+    void uiChannelSkipsAmbiguousSessionName() throws Exception {
+        knownCandidate("t1", "陈先生");
+        knownCandidate("t2", "陈先生");
+
+        stubChatlist("{\"name\":\"陈先生\",\"direction\":\"1\"}");
+
+        int processed = chatPollService.pollOnce(account);
+
+        assertEquals(0, processed, "同名多命中应跳过(不猜测)");
+        verify(commandService, never()).requestResume(any(), anyString(), any(), any());
+        verify(commandService, never()).attachFetch(any(), anyString(), anyString(), any());
+        verify(commandService, never()).chatmsg(any(), anyString(), any());
+    }
+
+    @Test
+    void uiChannelSkipsSessionWithoutImIdAndName() throws Exception {
+        stubChatlist("{\"direction\":\"1\"}");
+
+        int processed = chatPollService.pollOnce(account);
+
+        assertEquals(0, processed, "im_id 与 name 均缺失应跳过");
+        verify(commandService, never()).requestResume(any(), anyString(), any(), any());
+        verify(commandService, never()).chatmsg(any(), anyString(), any());
+    }
 }
