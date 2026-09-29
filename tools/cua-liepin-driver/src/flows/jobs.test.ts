@@ -337,3 +337,64 @@ test("runJobdelete:目标数超上限 → 零调用拒绝", async () => {
   assert.equal(outcome.status, "need_manual");
   assert.equal(s.calls.length, 0);
 });
+
+test("runJobdelete:招聘中未匹配 → 切待发布 → 全选删除 → deleted(联调路径)", async () => {
+  const pendingRow = { name: "销售经理", role: "link", actions: ["click"] };
+  const otherRow = { name: "Java后端开发工程师", role: "link", actions: ["click"] };
+  const pendingTab = { name: "待发布", role: "statictext", actions: ["click"] };
+  const delBtn = { name: "delete 删除", role: "button", actions: ["click"] };
+  const dialogText = { name: "删除职位会将对应职位下的应聘简历也一起删除，您确定要删除？" };
+
+  const s = new Scenario();
+  s.nav()
+    .snap([otherRow, pendingTab]) // runJobdelete 列表(招聘中)
+    .snap([otherRow, pendingTab]) // map first(招聘中)
+    .click()
+    .snap([{ name: "Java后端开发工程师" }], "https://lpt.liepin.com/job/detail/preview?ejob_id=J2")
+    .nav()
+    .snap([otherRow, pendingTab])
+    .snap([pendingRow, pendingTab]) // switchTab 快照 → 点待发布
+    .click()
+    .snap([pendingRow, pendingTab]) // map first(待发布)
+    .click()
+    .snap([{ name: "销售经理" }], "https://lpt.liepin.com/job/detail/preview?ejob_id=J1")
+    .nav()
+    .snap([pendingRow, pendingTab]) // 回列表
+    .snap([pendingRow, SELECT_ALL]) // snap2 全选
+    .click()
+    .snap([pendingRow, delBtn]) // snap3 删除就绪
+    .click()
+    .snap([dialogText, delBtn]) // snap4 确认弹窗
+    .click()
+    .snap([{ name: "操作成功" }]); // 成功反馈
+
+  const outcome = await runJobdelete(makeCtx(s), { jobIds: ["J1"], confirmDestructive: true });
+
+  assert.equal(outcome.status, "deleted");
+  assert.equal(outcome.success, true);
+  assert.deepEqual(outcome.deleted, ["J1"]);
+  assert.equal(outcome.deletion_pending, false);
+  assert.ok(outcome.steps.some((t) => t.includes("待发布")));
+});
+
+test("runJobdelete:两个页签都无匹配 → not_found", async () => {
+  const otherRow = { name: "Java后端开发工程师", role: "link", actions: ["click"] };
+  const pendingTab = { name: "待发布", role: "statictext", actions: ["click"] };
+
+  const s = new Scenario();
+  s.nav()
+    .snap([otherRow, pendingTab])
+    .snap([otherRow, pendingTab])
+    .click()
+    .snap([{ name: "Java后端开发工程师" }], "https://lpt.liepin.com/job/detail/preview?ejob_id=J2")
+    .nav()
+    .snap([otherRow, pendingTab])
+    .snap([pendingTab]) // switchTab
+    .click()
+    .snap([pendingTab]); // 待发布无行 → mapping 空
+
+  const outcome = await runJobdelete(makeCtx(s), { jobIds: ["J9"], confirmDestructive: true });
+
+  assert.equal(outcome.status, "not_found");
+  assert.equal(outcome.success, false);
+});

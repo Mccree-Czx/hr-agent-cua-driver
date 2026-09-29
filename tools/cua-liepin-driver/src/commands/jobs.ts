@@ -82,8 +82,10 @@ export async function handleJobdelete(cfg: DriverConfig, args: ParsedArgs): Prom
             : outcome.status === "ended_deletion_pending"
               ? "已结束发布,但「删除」入口未校准(待 W5 续);猎聘职位仍存在"
               : outcome.status === "ended"
-                ? `已删除 ${outcome.deleted.length} 个职位`
-                : "结果不确定,请人工核对";
+                ? "已结束发布"
+                : outcome.status === "deleted"
+                  ? `已删除 ${outcome.deleted.length} 个职位`
+                  : "结果不确定,请人工核对";
     console.log(
       JSON.stringify({
         success: outcome.success,

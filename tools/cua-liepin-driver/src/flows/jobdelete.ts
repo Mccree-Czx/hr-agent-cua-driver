@@ -45,6 +45,19 @@ export const END_BUTTON_MATCHER: NameMatcher = {
   excludeNames: ["已结束"],
 };
 
+/** 「删除」按钮(2026-09-29 联调实测:待发布/草稿页签勾选后出现,可访问名 "delete 删除") */
+export const DELETE_BUTTON_MATCHER: NameMatcher = {
+  names: ["删除"],
+  roles: ["button"],
+  actions: ["click"],
+};
+
+/** 删除确认弹窗的确认按钮(实测同文案 "delete 删除";取最后一个可点删除按钮) */
+export const DELETE_CONFIRM_TEXT_RE = /您确定要删除|确定要删除/;
+
+/** 删除成功/空列表特征 */
+export const DELETE_SUCCESS_RE = /(删除成功|操作成功|已删除)/;
+
 /** 结束确认弹窗按钮候选(未完整校准;未命中则不点,报告人工) */
 export const END_CONFIRM_MATCHER: NameMatcher = {
   names: ["确定", "确认", "确认结束", "结束职位"],
@@ -91,6 +104,7 @@ export type JobdeleteStatus =
   | "not_found"
   | "ended_deletion_pending"
   | "ended"
+  | "deleted"
   | "unknown";
 
 export interface JobdeleteOutcome {
@@ -103,6 +117,112 @@ export interface JobdeleteOutcome {
   mapping: JobRowMapping[];
   feedback: string[];
   steps: string[];
+}
+
+/** 页签切换(幂等:已在该页签时点击无害) */
+export async function switchTab(ctx: UiContext, tabName: string): Promise<void> {
+  const snap = await takeSnapshot(ctx);
+  const tab = snap.refs.find((r) => r.name === tabName && r.actions.includes("click"));
+  if (tab !== undefined) {
+    await clickRef(ctx.client, ctx.session, tab.ref);
+    await ctx.sleep(2_000);
+  }
+}
+
+/**
+ * 待发布页签的删除路径(2026-09-29 真机验证:全选 → 「delete 删除」→
+ * 确认弹窗「您确定要删除?」→ 行消失即为成功)。
+ */
+async function deleteViaPendingTab(
+  ctx: UiContext,
+  mapping: JobRowMapping[],
+  matched: JobRowMapping[],
+  steps: string[],
+): Promise<JobdeleteOutcome> {
+  const fail = (status: JobdeleteStatus, message: string): JobdeleteOutcome => {
+    steps.push(message);
+    return {
+      success: false,
+      status,
+      deleted: [],
+      ended: [],
+      deletion_pending: false,
+      mapping,
+      feedback: [],
+      steps,
+    };
+  };
+
+  if (mapping.length !== matched.length) {
+    return fail(
+      "need_manual",
+      `目标 ${matched.length} 个 ≠ 列表 ${mapping.length} 行;单行勾选不可定位,拒绝全选以免误伤`,
+    );
+  }
+
+  const snap2 = await takeSnapshot(ctx);
+  const selectAll = findSelectAll(snap2);
+  if (selectAll === null) {
+    return fail("unknown", "未找到全选勾选框(页面结构可能变化)");
+  }
+  await clickRef(ctx.client, ctx.session, selectAll.ref);
+  steps.push("已勾选(全选)");
+  await ctx.sleep(1_200);
+
+  const snap3 = await takeSnapshot(ctx);
+  const delBtn = matchRef(snap3, DELETE_BUTTON_MATCHER);
+  if (delBtn === null) {
+    return fail("unknown", "勾选后「删除」按钮未就绪(disabled 或未出现)");
+  }
+  await clickRef(ctx.client, ctx.session, delBtn.ref);
+  steps.push(`已点击「${delBtn.name ?? "删除"}」`);
+  await ctx.sleep(1_800);
+
+  // 确认弹窗(实测文本:删除职位会将对应职位下的应聘简历也一起删除,您确定要删除?)
+  const snap4 = await takeSnapshot(ctx);
+  const dialogText = snap4.refs.find((r) => r.name !== null && DELETE_CONFIRM_TEXT_RE.test(r.name));
+  if (dialogText !== undefined) {
+    const dels = snap4.refs.filter(
+      (r) => r.role === "button" && r.name !== null && /删除/.test(r.name) && r.actions.includes("click"),
+    );
+    const confirm = dels[dels.length - 1];
+    if (confirm === undefined) {
+      return fail("unknown", "确认弹窗无删除按钮");
+    }
+    await clickRef(ctx.client, ctx.session, confirm.ref);
+    steps.push("已点击确认弹窗「删除」");
+  } else {
+    steps.push("未发现确认弹窗(可能无弹窗直接删除)");
+  }
+
+  // 验证:成功文案或行消失
+  const feedback: string[] = [];
+  for (let i = 1; i <= 3; i++) {
+    await ctx.sleep(1_800);
+    const probe = await takeSnapshot(ctx);
+    for (const r of probe.refs) {
+      if (r.name !== null && r.name.length <= 40 && DELETE_SUCCESS_RE.test(r.name)) {
+        feedback.push(r.name);
+      }
+    }
+    const remains = probe.refs.some(
+      (r) => r.role === "link" && r.name !== null && matched.some((m) => m.title === r.name),
+    );
+    if (feedback.length > 0 || !remains) {
+      steps.push(`删除完成(行消失=${!remains},成功文案=${feedback.join("/") || "-"})`);
+      return {
+        success: true,
+        status: "deleted",
+        deleted: matched.map((m) => m.ejobId as string),
+        ended: [],
+        deletion_pending: false,
+        mapping,
+        feedback,
+        steps,
+      };
+    }
+  }
+  return fail("unknown", "提交删除后未观察到行消失/成功反馈,请人工核对");
 }
 
 /** 穿透映射:逐行点击 → 解析 ejob_id → 回列表(重拍快照取下一行 ref) */
@@ -191,10 +311,22 @@ export async function runJobdelete(ctx: UiContext, input: JobdeleteInput): Promi
     };
   }
 
-  // 穿透映射 ejob_id
-  const mapping = await mapRowsToIds(ctx);
-  const matched = mapping.filter((m) => m.ejobId !== null && input.jobIds.includes(m.ejobId));
-  steps.push(`映射 ${mapping.length} 行,匹配目标 ${matched.length} 个`);
+  // 穿透映射 ejob_id(先"招聘中"页签)
+  let mapping = await mapRowsToIds(ctx);
+  let matched = mapping.filter((m) => m.ejobId !== null && input.jobIds.includes(m.ejobId));
+  steps.push(`[招聘中] 映射 ${mapping.length} 行,匹配目标 ${matched.length} 个`);
+
+  // 未匹配 → 切"待发布"重试(2026-09-29 联调:审核中/待发布职位在此页签,勾选后直接有"删除")
+  if (matched.length === 0) {
+    await switchTab(ctx, "待发布");
+    mapping = await mapRowsToIds(ctx);
+    matched = mapping.filter((m) => m.ejobId !== null && input.jobIds.includes(m.ejobId));
+    steps.push(`[待发布] 映射 ${mapping.length} 行,匹配目标 ${matched.length} 个`);
+    if (matched.length > 0) {
+      return await deleteViaPendingTab(ctx, mapping, matched, steps);
+    }
+  }
+
   if (matched.length === 0) {
     return { ...failed("not_found", `未找到匹配 --job 的职位(目标 ${input.jobIds.join(",")})`), mapping };
   }

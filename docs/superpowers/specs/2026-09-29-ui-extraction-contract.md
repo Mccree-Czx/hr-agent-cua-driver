@@ -135,15 +135,21 @@ UI 输出形状:
 ### joblist(已验证)
 - 默认页 `https://lpt.liepin.com/job/manager`;行=可点击职位名 link;点击行 → `job/detail/preview?ejob_id=xxx`(**jobId 获取路径,已验证**);`--capture-ids --ref` 穿透,`--id-param` 默认 ejob_id。真机:`joblist --json` exit 0,71 行。
 
-### jobpublish(部分校准,输入机制已验证)
+### jobpublish(完整发布链路已真机跑通 2026-09-29)
 - 表单页 URL 直达:`https://lpt.liepin.com/job/publish?ejobActionType=publish`;
-- **职位名称输入框 = 快照中首个「role=combobox + actions含type」(in_viewport 优先)**;空值时在 semantic 快照中不可见,有值后暴露;`browser_type(replace:true)` 写中文实测成功(写入+清空复原);
-- **「保 存」(含全角空格)/「发布职位」按钮** role=button,offscreen 可直接点击(实测触发校验);
-- **校验反馈**:保存触发页面提示(实测「请选择所属部门」),以 statictext 呈现,正则 `/(请选择|请填|不能为空|必填|请输入)/` 可捕获;
-- **UIA 补充(get_window_state)**:职位名称在 UIA 中为 ComboBox label=ejobTitle;表单还有 CheckBox(允许学生投递/统招/语言/海外经历/发布为保密职位/协议已勾选 selected:true)等;
-- **未完成校准**:职位类别三级联动、职位描述富文本、薪资/经验/学历选择、城市/地址、提交流程全链路 → v1 输出 unvalidated_fields 明示。
+- **名称+类别一步填**:职位名称框(首个 combobox+type;空值时不可见)→`browser_type`关键词→下拉“推荐职位名称”出现含“>”的路径选项→点击→名称与类别同时落值(实测:输入“销售”→选“销售/客服 > 销售管理 > 销售经理/主管”→名称=销售经理、类别=销售经理/主管);
+- **UIA 定位公式(关键)**:`get_window_state` 的 frame 为屏幕物理像素(DPR=2,内容区原点 y=286),换算 `CSS=(x/2,(y-286)/2)`;对空下拉(经验/学历/薪资/部门) semantic 不可见,必须 UIA 定位→`browser_click` 坐标点击→选项出现;
+- 工作经验=detailWorkyear、学历=detailEdulevel(点击+精确匹配选项点击);薪资=rc_select_4/rc_select_6(选项为纯数字节点,需新节点差集定位);部门=ComboBox label=“所属部门”(点击+type 输入);城市/地址:UIA 点击+选择历史地址建议;
+- **滚动/漂移教训**:点击 offscreen 元素会触发页面滚动(跨脚本坐标失效);每字段应“UIA 实时定位→立即点击”单脚本内完成;文案类元素可用“点 offscreen 招聘人数”触发滚动到 02 区;
+- **提交**:「发布职位」按钮→跳转 `job/publish/result?ejobIds=<id>`(URL 带出 ejob_id)→职位进入“待发布”页签(审核后自动上线);实测发布成功(85915821);
+- `--draft-only` 对应「保 存」下拉菜单中的“保存草稿”。
 
-### jobdelete(部分校准,安全闸已生效)
-- 勾选:仅「全选」可定位(semantic 中列表区**最后一个可点击 labeltext**;UIA CheckBox label=全选);**单行 checkbox 无语义节点** → 多职位无法精确勾选;
-- 勾选后批量条「刷新/结束」由 disabled(actions=[]) 变 enabled(actions 含 click);**批量条无独立「删除」** → 删除入口疑在"已关闭"页签(待校准);
-- v1 安全策略:仅当「目标职位=列表全部可见行」才执行 全选→结束;否则 need_manual;`--confirm-destructive` 二次确认闸;完成后输出 `deletion_pending:true`(不谎报);真机 dry-run exit 0 ✓。
+### jobdelete(待发布删除路径已真机验证 2026-09-29)
+- 勾选:仅「全选」可定位(semantic 中列表区**最后一个可点击 labeltext**;UIA CheckBox label=全选);**单行 checkbox 无语义节点**;
+- **“招聘中”页签**:勾选后批量条出现「刷新/结束」(无删除)→ 结束→确认→删除入口待续;
+- **“待发布”页签(已跑通)**:勾选后出现 **「delete 删除」** → 点击 → 确认弹窗(文本“删除职位会将对应职位下的应聘简历也一起删除，您确定要删除？”，确认按钮同为“delete 删除”，取最后一个可点删除按钮) → **行消失=删除成功**;实测测试职位 85915821 已删除;
+- v1 安全闸保留:仅当「目标职位=当前页签全部可见行」才全选;`--confirm-destructive` 二次确认闸。
+
+### 环境观察(高频问题)
+- **Chrome 调试授权确认框**(要允许远程调试吗)在新窗口/新目标时**高频再现**;`ensureBrowserSession` 先清障再附加;多窗口共存时偶发 `no CDP target correlates` 或 attach 超时——重跑一次通常可恢复(观测到 3 次自愈);
+- 用户可能同时使用 Chrome(新窗口/关闭),联调应在每步前用 ensure 重新附加,不缓存窗口状态。
