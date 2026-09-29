@@ -2,8 +2,10 @@ package com.hragent.service;
 
 import com.hragent.config.HrAgentProperties;
 import com.hragent.entity.LiepinAccount;
+import com.hragent.executor.AccountLocks;
 import com.hragent.executor.CliException;
 import com.hragent.executor.CliResult;
+import com.hragent.executor.CliSpawnCounter;
 import com.hragent.executor.LiepinCliExecutor;
 import com.hragent.notify.NotifyService;
 import com.hragent.repository.LiepinAccountMapper;
@@ -48,7 +50,7 @@ class LiepinCommandServiceRiskTest {
         properties = new HrAgentProperties();
         properties.getAutoRecruit().setRiskProbeBackoffMinutes(15);
         guard = new RiskSuspectGuard(properties);
-        executor = spy(new LiepinCliExecutor(properties));
+        executor = spy(new LiepinCliExecutor(properties, new AccountLocks(), new CliSpawnCounter()));
         accounts = mock(LiepinAccountMapper.class);
         notify = mock(NotifyService.class);
         service = new LiepinCommandService(executor, accounts, notify, guard);

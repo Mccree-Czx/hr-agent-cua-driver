@@ -1,0 +1,23 @@
+{
+  "name": "@hragent/cua-liepin-driver",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HR Agent 的猎聘 UI 驱动适配器:通过 trycua/cua Cua Driver 以真实 UI 操作替代 liepin-cli 直调内部接口(全量替换计划 W1 骨架)",
+  "type": "module",
+  "main": "dist/cli/index.js",
+  "bin": {
+    "cua-liepin-driver": "dist/cli/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "npm run build && node dist/cli/index.js",
+    "test": "npm run build && node --test \"dist/**/*.test.js\""
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "typescript": "^5.3.3"
+  }
+}

@@ -8,6 +8,7 @@
 
 - **backend/**:Spring Boot 3 + Java 17 + MyBatis-Plus + MySQL,通过子进程驱动 liepin-cli(Node.js CLI,浏览器自动化)
 - **frontend/**:Vue3 + Element Plus 管理后台(岗位/账号/候选人台账/用户)
+- **tools/cua-liepin-driver/**:UI 驱动适配器(CUA 全量替换计划;经 cua-driver 以真实 UI 操作替代直调接口,默认关闭、命令级开关灰度)
 - **deploy/**:部署脚本(liepin-cli 安装、MinIO、登录态备份、前端构建)
 - AI 层:AgentScope Java 框架,底层接国内模型 API(DeepSeek/Qwen/GLM)
 - 简历存储:MinIO 对象存储 + MySQL 元数据(StorageService 抽象,可切本地文件系统)

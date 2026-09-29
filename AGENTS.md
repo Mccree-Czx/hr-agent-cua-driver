@@ -26,6 +26,14 @@ This file provides guidance to Qoder (qoder.com) when working with code in this 
 - 涉及猎聘页面的真机验证仅使用临时测试职位,不得对真实在招职位做破坏性验证。
 - 猎聘页面逆向分析产物(bundle-downloads、probe 输出等)不得入库(已在 .gitignore 排除)。
 
+### 4. 工具目录规范(tools/cua-liepin-driver)
+
+- `tools/cua-liepin-driver` 为 CUA 全量替换计划( docs/superpowers/specs/2026-09-29-cua-driver-w0-spike.md )的 UI 驱动适配器:通过 cua-driver 以真实 UI 操作替代 liepin-cli 的"注入 fetch 直调接口";命令级开关为 `hr-agent.cua.commands.<命令>=ui`(总开关 `hr-agent.cua.enabled`,默认关闭=legacy 行为不变)。
+- 修改该目录后必须执行 `npm run build` 与 `npm test`,并在 `backend/` 执行 `mvn test` 确保全部测试通过。
+- 守护进程必须以 `cua-driver serve --grant existing-profile` 启动,否则 existing-profile 附加会被拒绝(`browser_consent_required`)。
+- 输出契约与 liepin-cli 一致(退出码 0/1/2/3);注意 `cua-driver call` 的结构化拒绝也是 exit 0,必须解析 JSON `status` 字段。
+- 真机验证沿用 liepin-cli 纪律:仅限临时测试职位/约定测试人选,不发消息、不打招呼。
+
 ## 交付流程
 
 1. 完成代码改动。

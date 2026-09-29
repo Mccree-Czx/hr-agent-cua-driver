@@ -20,15 +20,25 @@ class LiepinCliExecutorTest {
 
     private static HrAgentProperties properties;
 
+    /** 与 CuaDriverExecutor 共享的账号锁/平台足迹计数(W1 起;测试内单独实例化) */
+    private static AccountLocks accountLocks;
+    private static CliSpawnCounter spawnCounter;
+
     @BeforeAll
     static void setUp() throws Exception {
-        File script = new File("src/test/resources/scripts/fake-liepin.sh");
+        // 桩脚本按操作系统选择:POSIX 用 .sh,Windows 用 .cmd(行为对齐,含中文输出编码适配)
+        File script = isWindows()
+                ? new File("src/test/resources/scripts/fake-liepin.cmd")
+                : new File("src/test/resources/scripts/fake-liepin.sh");
         // 确保可执行权限(maven 资源复制不保留执行位)
         script.setExecutable(true);
         fakeScript = script.getAbsolutePath();
 
         properties = new HrAgentProperties();
         properties.getLiepin().setCliPath(fakeScript);
+
+        accountLocks = new AccountLocks();
+        spawnCounter = new CliSpawnCounter();
     }
 
     private LiepinAccount account(long id) {
@@ -39,7 +49,7 @@ class LiepinCliExecutorTest {
     }
 
     private LiepinCliExecutor newExecutor() {
-        return new LiepinCliExecutor(properties);
+        return new LiepinCliExecutor(properties, accountLocks, spawnCounter);
     }
 
     @Test
@@ -176,6 +186,10 @@ class LiepinCliExecutorTest {
         assertEquals(2, executor.maxConcurrent.get(), "不同账号应可并发");
     }
 
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase().contains("win");
+    }
+
     /** 同时启动两个任务并等待结束 */
     private static void runConcurrently(ThrowingRunnable first, ThrowingRunnable second) throws Exception {
         CountDownLatch start = new CountDownLatch(1);
@@ -209,7 +223,7 @@ class LiepinCliExecutorTest {
         final AtomicInteger maxConcurrent = new AtomicInteger();
 
         ProbeExecutor(HrAgentProperties properties) {
-            super(properties);
+            super(properties, accountLocks, spawnCounter);
         }
 
         @Override

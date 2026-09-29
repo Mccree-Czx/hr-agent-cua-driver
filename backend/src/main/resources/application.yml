@@ -71,6 +71,16 @@ hr-agent:
     risk-probe-backoff-minutes: ${AUTO_RECRUIT_RISK_PROBE_BACKOFF_MINUTES:15}
     # 会话列表拉取失败后的轮内重试等待(毫秒)
     poll-retry-delay-millis: ${AUTO_RECRUIT_POLL_RETRY_DELAY_MILLIS:20000}
+  cua:
+    # UI 驱动通道(全量替换计划 W1 骨架;默认关闭,行为与既有完全一致)
+    enabled: ${CUA_ENABLED:false}
+    # node 可执行文件 + 驱动入口脚本绝对路径(指向 tools/cua-liepin-driver/dist/cli/index.js)
+    node-path: ${CUA_NODE_PATH:node}
+    script-path: ${CUA_SCRIPT_PATH:}
+    # cua-driver 可执行文件(留空则从 PATH 查找)
+    driver-bin: ${CUA_DRIVER_BIN:}
+    # 命令级路由:命令名 → ui|legacy(未配置=legacy;W2+ 逐波启用,示例:greet: ui)
+    commands: {}
   storage:
     type: ${STORAGE_TYPE:minio}
     minio:

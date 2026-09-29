@@ -4,7 +4,9 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @ConfigurationProperties(prefix = "hr-agent")
@@ -25,6 +27,8 @@ public class HrAgentProperties {
     private Notify notify = new Notify();
 
     private AutoRecruit autoRecruit = new AutoRecruit();
+
+    private Cua cua = new Cua();
 
     @Data
     public static class Jwt {
@@ -177,5 +181,24 @@ public class HrAgentProperties {
 
         /** 飞书机器人签名密钥(机器人开启加签时必填,未开启留空) */
         private String feishuSecret = "";
+    }
+
+    @Data
+    public static class Cua {
+
+        /** UI 驱动通道总开关(默认关闭;关闭时命令级配置不生效,行为与既有完全一致) */
+        private boolean enabled = false;
+
+        /** Node 可执行文件(node dist/cli/index.js 调用方式) */
+        private String nodePath = "node";
+
+        /** cua-liepin-driver CLI 入口脚本绝对路径(指向 tools/cua-liepin-driver/dist/cli/index.js) */
+        private String scriptPath = "";
+
+        /** cua-driver 可执行文件(留空则由适配器从 PATH 查找) */
+        private String driverBin = "";
+
+        /** 命令级路由:命令名 → ui|legacy(未配置=legacy;W2+ 逐波切换) */
+        private Map<String, String> commands = new HashMap<>();
     }
 }
