@@ -1,5 +1,6 @@
 package com.hragent.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.hragent.config.HrAgentProperties;
 import com.hragent.entity.LiepinAccount;
 import com.hragent.executor.CliException;
@@ -14,9 +15,11 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.Duration;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -134,5 +137,38 @@ class LiepinCommandServiceRoutingTest {
         // 首次命中仅冻结(不标记账号、不告警)——与 legacy 通道语义一致
         verify(accounts, never()).updateById(any(LiepinAccount.class));
         verify(legacy, never()).checkRisk(any(), any());
+    }
+
+    @Test
+    void uiJobListReadsRecordsAndPassesWithIds() throws Exception {
+        enableUi("joblist");
+        when(cua.execute(any(), any(), any(String[].class)))
+                .thenReturn(new CliResult(0,
+                        "{\"extraction_status\":\"validated\",\"records\":[{\"title\":\"销售经理\",\"city\":\"上海-黄浦区\",\"salary\":\"15-30k\",\"status\":\"沟通中\",\"jobId\":\"85915821\"}]}",
+                        "", false));
+
+        List<JsonNode> jobs = service.jobList(account, Duration.ofMinutes(1));
+
+        assertEquals(1, jobs.size());
+        assertEquals("85915821", jobs.get(0).path("jobId").asText());
+        assertEquals("销售经理", jobs.get(0).path("title").asText());
+        ArgumentCaptor<String[]> captor = ArgumentCaptor.forClass(String[].class);
+        verify(cua, times(1)).execute(eq(account), any(), captor.capture());
+        assertEquals("joblist", captor.getValue()[0]);
+        assertTrue(java.util.Arrays.asList(captor.getValue()).contains("--with-ids"),
+                "UI 通道必须带 --with-ids 保证 jobId 可得");
+        verify(legacy, never()).execute(any(), any(), any(String[].class));
+    }
+
+    @Test
+    void legacyJobListStaysArrayOutput() throws Exception {
+        when(legacy.execute(any(), any(), any(String[].class)))
+                .thenReturn(new CliResult(0, "[{\"jobId\":\"1\",\"title\":\"T\"}]", "", false));
+
+        List<JsonNode> jobs = service.jobList(account, Duration.ofMinutes(1));
+
+        assertEquals(1, jobs.size());
+        assertEquals("1", jobs.get(0).path("jobId").asText());
+        verify(cua, never()).execute(any(), any(), any(String[].class));
     }
 }

@@ -7,7 +7,8 @@ import assert from "node:assert/strict";
 import { DriverClient, type ToolCallResult } from "../cua/driver-client.js";
 import type { BrowserSession } from "../cua/session.js";
 import type { UiContext } from "../cua/ui-actions.js";
-import { captureIdsByClickThrough, runReadChatMsg } from "./read-pages.js";
+import { extractJobRecords } from "../cua/extract.js";
+import { captureIdsByClickThrough, runReadChatMsg, runReadList } from "./read-pages.js";
 import { runReadResume } from "./read-resume.js";
 
 const RESUME_URL = "https://lpt.liepin.com/resume/detail?resIdEncode=r-1&sfrom=R_SEARCH_CONDITION";
@@ -30,7 +31,7 @@ class Scenario {
     return this.expect("browser_navigate", {});
   }
 
-  snap(refs: Array<{ name: string | null; role?: string; ref?: string; actions?: string[] }>, url = RESUME_URL): this {
+  snap(refs: Array<{ name: string | null; role?: string; ref?: string; actions?: string[]; visibility?: string }>, url = RESUME_URL): this {
     const index = this.calls.length * 10;
     return this.expect("get_browser_state", {
       status: "ok",
@@ -41,6 +42,7 @@ class Scenario {
         role: r.role ?? "statictext",
         name: r.name,
         actions: r.actions ?? [],
+        visibility: r.visibility ?? "in_viewport",
       })),
     });
   }
@@ -204,4 +206,33 @@ test("runReadChatMsg:附件卡片文案迹象检测", async () => {
   assert.equal(outcome.attachment_hint, true);
   assert.ok(outcome.steps.some((l) => l.includes("附件卡片")));
   assert.deepEqual(s.tools(), ["browser_navigate", "get_browser_state", "get_browser_state"]);
+});
+
+test("runReadList:autoCaptureRows 逐行穿透并把 job_id 合并进 records(joblist --with-ids)", async () => {
+  const s = new Scenario();
+  const row = { name: "销售经理", role: "link", actions: ["click"] };
+  s.nav()
+    .snap([{ name: "职位名称" }]) // checkPageState
+    .snap([row]) // readPage 快照(行)
+    .click() // 穿透点击
+    .snap([{ name: "销售经理" }], "https://lpt.liepin.com/job/detail/preview?ejob_id=J9")
+    .nav() // 回列表
+    .snap([row]);
+
+  const outcome = await runReadList(makeCtx(s), {
+    pageUrl: "https://lpt.liepin.com/job/manager",
+    captureRefs: [],
+    idParam: "ejob_id",
+    dryRun: false,
+    label: "职位列表页",
+    recordsExtractor: (snap) => extractJobRecords(snap),
+    autoCaptureRows: true,
+  });
+
+  const records = outcome.records as Array<Record<string, unknown>>;
+  assert.equal(records.length, 1);
+  assert.equal(records[0].title, "销售经理");
+  assert.equal(records[0].jobId, "J9");
+  assert.equal(outcome.extraction_status, "validated");
+  assert.ok(outcome.steps.some((l) => l.includes("自动穿透 1 行")));
 });

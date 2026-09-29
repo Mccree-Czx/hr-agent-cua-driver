@@ -268,14 +268,17 @@ export const JOB_ROW_EXCLUDE = [
   "猎头服务", "提效服务", "问 Lily", "意向人选", "急聘置顶", "火爆刷",
 ];
 
-/** 单条职位记录(UI 抽取契约:v1 不含 jobId——列表行文本层无法获得,
- *  id 由点击穿透(captureIdsByClickThrough)补充) */
+/** 单条职位记录(UI 抽取契约;字段名与 legacy joblist 输出对齐以复用后端解析):
+ * title/status/city/salary 对应 legacy 的 title/status/city/salary;
+ * jobId 由 --with-ids 逐行穿透补充(列表文本层不可得时为 null/缺省)。 */
 export interface JobRecord {
-  name: string;
-  location: string | null;
+  title: string;
+  city: string | null;
   salary: string | null;
   refreshed_at: string | null;
   status: string | null;
+  /** 穿透获得的职位 ID(joblist --with-ids;未穿透时缺省) */
+  jobId?: string | null;
 }
 
 /** 是否职位行 link(与 jobdelete 的行识别语义一致) */
@@ -317,8 +320,8 @@ export function extractJobRecords(snap: SnapshotResult): JobRecord[] {
     const start = idxs[k];
     const end = k + 1 < idxs.length ? idxs[k + 1] : Math.min(refs.length, start + 60);
     const record: JobRecord = {
-      name: refs[start].name as string,
-      location: null,
+      title: refs[start].name as string,
+      city: null,
       salary: null,
       refreshed_at: null,
       status: null,
@@ -329,8 +332,8 @@ export function extractJobRecords(snap: SnapshotResult): JobRecord[] {
         continue;
       }
       const text = name.trim();
-      if (record.location === null && /^[\u4e00-\u9fa5]{2,10}-[\u4e00-\u9fa5]{2,10}$/.test(text)) {
-        record.location = text;
+      if (record.city === null && /^[\u4e00-\u9fa5]{2,10}-[\u4e00-\u9fa5]{2,10}$/.test(text)) {
+        record.city = text;
       } else if (record.salary === null && matchSalary(text) !== null) {
         record.salary = matchSalary(text);
       } else if (record.refreshed_at === null && /\d{4}\.\d{2}\.\d{2}\s*刷新$/.test(text)) {

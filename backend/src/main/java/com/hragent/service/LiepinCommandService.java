@@ -89,16 +89,26 @@ public class LiepinCommandService {
         return JsonExtractor.parse(result.stdout());
     }
 
-    /** 猎聘职位列表(招聘者端,用于同步到系统岗位管理) */
+    /**
+     * 猎聘职位列表(招聘者端,用于同步到系统岗位管理)。
+     * 双通道归一为数组输出:
+     * - legacy(liepin-cli):直接为数组(含 jobId/title/status/city/salary);
+     * - UI(cua-liepin-driver):输出 {records:[{title,city,salary,status,refreshed_at,jobId?}],...},
+     *   本方法读 records;--with-ids 逐行穿透保证 jobId 可得(下游同步/复核依赖)。
+     */
     public List<JsonNode> jobList(LiepinAccount account, Duration timeout) {
-        CliResult result = run(account, timeout, "joblist", "--limit", "40", "--json");
+        boolean ui = cuaCommandResolver.useUi("joblist");
+        CliResult result = ui
+                ? run(account, timeout, "joblist", "--with-ids", "--json")
+                : run(account, timeout, "joblist", "--limit", "40", "--json");
         JsonNode node = JsonExtractor.parse(result.stdout())
                 .orElseThrow(() -> BizException.badRequest("joblist 输出无有效 JSON"));
-        if (!node.isArray()) {
-            throw BizException.badRequest("joblist 输出不是数组");
+        JsonNode rows = ui ? node.path("records") : node;
+        if (!rows.isArray()) {
+            throw BizException.badRequest(ui ? "joblist(UI)输出缺少 records 数组" : "joblist 输出不是数组");
         }
         List<JsonNode> list = new ArrayList<>();
-        node.forEach(list::add);
+        rows.forEach(list::add);
         return list;
     }
 

@@ -98,13 +98,15 @@ export async function handleChatMsg(cfg: DriverConfig, args: ParsedArgs): Promis
 }
 
 /**
- * joblist [--url <页面>] [--capture-ids --ref <pN:M> ...] [--id-param ejob_id] [--dry-run] [--json]
+ * joblist [--url <页面>] [--with-ids] [--capture-ids --ref <pN:M> ...] [--id-param ejob_id] [--dry-run] [--json]
  * 默认页 https://lpt.liepin.com/job/manager(2026-09-29 联调验证);
- * 穿透:点击职位行 → 详情页 URL 的 ejob_id 参数(已验证)。
+ * 穿透:点击职位行 → 详情页 URL 的 ejob_id 参数(已验证);
+ * --with-ids: 自动逐行穿透并把 job_id 合并进 records(逐行点击约 6-8s/行,上限 20 行)。
  */
 export async function handleJoblist(cfg: DriverConfig, args: ParsedArgs): Promise<number> {
   const url = (flagValue(args, "url") ?? "https://lpt.liepin.com/job/manager").trim();
   const idParam = flagValue(args, "id-param") ?? "ejob_id";
+  const withIds = args.flags["with-ids"] === true;
   const captureRefs = args.flags["capture-ids"] === true ? (args.multi.ref ?? []) : [];
   const dryRun = args.flags["dry-run"] === true;
   if (args.flags["capture-ids"] === true && captureRefs.length === 0) {
@@ -120,6 +122,7 @@ export async function handleJoblist(cfg: DriverConfig, args: ParsedArgs): Promis
         dryRun,
         label: "职位列表页",
         recordsExtractor: (snap) => extractJobRecords(snap),
+        autoCaptureRows: withIds,
       }),
     );
   });

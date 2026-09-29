@@ -167,8 +167,8 @@ test("extractJobRecords:真机样本结构(职位名+地点/薪资/刷新/状态
   const records = extractJobRecords(snap);
   assert.equal(records.length, 1);
   assert.deepEqual(records[0], {
-    name: "海外ToB渠道销售（出海品牌）",
-    location: "上海-黄浦区",
+    title: "海外ToB渠道销售（出海品牌）",
+    city: "上海-黄浦区",
     salary: "15-30k",
     refreshed_at: "2026.09.29刷新",
     status: "沟通中",
@@ -188,11 +188,11 @@ test("extractJobRecords:多行边界不串行(字段归属各自职位)", () => 
   ]);
   const records = extractJobRecords(snap);
   assert.equal(records.length, 2);
-  assert.equal(records[0].location, "北京-朝阳区");
+  assert.equal(records[0].city, "北京-朝阳区");
   assert.equal(records[0].salary, "20-30k");
   assert.equal(records[0].status, null, "第二行的状态不得归入第一行");
-  assert.equal(records[1].name, "Java后端开发工程师");
-  assert.equal(records[1].location, "深圳-南山区");
+  assert.equal(records[1].title, "Java后端开发工程师");
+  assert.equal(records[1].city, "深圳-南山区");
   assert.equal(records[1].salary, "25-35k");
   assert.equal(records[1].status, "招聘中");
 });
@@ -200,7 +200,7 @@ test("extractJobRecords:多行边界不串行(字段归属各自职位)", () => 
 test("extractJobRecords:待发布行缺字段时置 null(不伪造)", () => {
   const snap = snapRefs([{ name: "销售经理", role: "link", actions: ["click"] }]);
   const records = extractJobRecords(snap);
-  assert.deepEqual(records, [{ name: "销售经理", location: null, salary: null, refreshed_at: null, status: null }]);
+  assert.deepEqual(records, [{ title: "销售经理", city: null, salary: null, refreshed_at: null, status: null }]);
 });
 
 test("extractCandidateRecords:真机样本结构(温女士卡片序列)", () => {

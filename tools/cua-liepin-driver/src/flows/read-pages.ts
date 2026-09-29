@@ -11,6 +11,7 @@ import {
   extractCandidateRecords,
   extractResumeNo,
   hasAttachmentHint,
+  jobRowIndexes,
   queryParam,
   rawTextOf,
   textLinesOf,
@@ -125,7 +126,12 @@ export interface ReadListInput {
   label: string;
   /** 结构化 records 抽取器(joblist 等提供;2026-09-29 W6 适配起点) */
   recordsExtractor?: (snap: SnapshotResult) => unknown[];
+  /** 自动逐行穿透取 ID 并合并进 records(joblist --with-ids;逐行点击成本高,显式开启) */
+  autoCaptureRows?: boolean;
 }
+
+/** 自动穿透行数上限(防御大列表耗时失控) */
+export const AUTO_CAPTURE_LIMIT = 20;
 
 /** 列表页通用抽取(+ 可选 ID 穿透;穿透含 URL 参数与预览层「简历编号」双通道) */
 export async function runReadList(ctx: UiContext, input: ReadListInput): Promise<RawPageOutcome> {
@@ -139,7 +145,25 @@ export async function runReadList(ctx: UiContext, input: ReadListInput): Promise
     const hit = captures.filter((c) => c.id !== null).length;
     steps.push(`穿透 ${captures.length} 个,解析到 ID ${hit} 个`);
   }
-  const records = input.recordsExtractor !== undefined ? input.recordsExtractor(snap) : undefined;
+
+  let records = input.recordsExtractor !== undefined ? input.recordsExtractor(snap) : undefined;
+
+  // 自动逐行穿透:把行 ID 合并进 records(仅显式开启;dry-run 时仅报告不点击)
+  if (input.autoCaptureRows === true && records !== undefined && records.length > 0) {
+    const rowRefs = jobRowIndexes(snap.refs)
+      .map((i) => snap.refs[i].ref)
+      .slice(0, AUTO_CAPTURE_LIMIT);
+    const autoCaptures = await captureIdsByClickThrough(ctx, rowRefs, input.pageUrl, input.idParam, input.dryRun);
+    const rows = records as Array<Record<string, unknown>>;
+    autoCaptures.forEach((c, i) => {
+      if (rows[i] !== undefined) {
+        rows[i].jobId = c.id;
+      }
+    });
+    const hit = autoCaptures.filter((c) => c.id !== null).length;
+    steps.push(`自动穿透 ${rowRefs.length} 行,解析到 job_id ${hit} 个`);
+  }
+
   if (records !== undefined) {
     steps.push(`结构化记录 ${records.length} 条`);
   }
