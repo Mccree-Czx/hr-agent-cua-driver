@@ -8,6 +8,7 @@
 
 import { CuaError } from "../contract.js";
 import {
+  candidateRowIndexes,
   extractCandidateRecords,
   extractResumeNo,
   hasAttachmentHint,
@@ -114,6 +115,8 @@ export interface RecommendInput {
   /** 穿透后解析的 URL 参数名(默认 resIdEncode) */
   idParam?: string;
   dryRun: boolean;
+  /** 自动逐卡穿透取 resume_id(recommend --with-ids;预览层「简历编号」回退通道) */
+  withIds?: boolean;
 }
 
 /** 列表页通用抽取输入(recommend/joblist 复用) */
@@ -126,8 +129,12 @@ export interface ReadListInput {
   label: string;
   /** 结构化 records 抽取器(joblist 等提供;2026-09-29 W6 适配起点) */
   recordsExtractor?: (snap: SnapshotResult) => unknown[];
-  /** 自动逐行穿透取 ID 并合并进 records(joblist --with-ids;逐行点击成本高,显式开启) */
+  /** 自动逐行穿透取 ID 并合并进 records(joblist/recommend --with-ids;逐行点击成本高,显式开启) */
   autoCaptureRows?: boolean;
+  /** 穿透行 ref 定位器(缺省=职位行 link;recommend 传候选人姓名节点) */
+  autoCaptureRowRefs?: (snap: SnapshotResult) => string[];
+  /** 合并进 records 的字段名(缺省 jobId;recommend 传 resume_id,与后端下游契约对齐) */
+  autoCaptureField?: string;
 }
 
 /** 自动穿透行数上限(防御大列表耗时失控) */
@@ -150,18 +157,20 @@ export async function runReadList(ctx: UiContext, input: ReadListInput): Promise
 
   // 自动逐行穿透:把行 ID 合并进 records(仅显式开启;dry-run 时仅报告不点击)
   if (input.autoCaptureRows === true && records !== undefined && records.length > 0) {
-    const rowRefs = jobRowIndexes(snap.refs)
-      .map((i) => snap.refs[i].ref)
-      .slice(0, AUTO_CAPTURE_LIMIT);
+    const locate =
+      input.autoCaptureRowRefs ??
+      ((s: SnapshotResult) => jobRowIndexes(s.refs).map((i) => s.refs[i].ref));
+    const rowRefs = locate(snap).slice(0, AUTO_CAPTURE_LIMIT);
     const autoCaptures = await captureIdsByClickThrough(ctx, rowRefs, input.pageUrl, input.idParam, input.dryRun);
     const rows = records as Array<Record<string, unknown>>;
+    const field = input.autoCaptureField ?? "jobId";
     autoCaptures.forEach((c, i) => {
       if (rows[i] !== undefined) {
-        rows[i].jobId = c.id;
+        rows[i][field] = c.id;
       }
     });
     const hit = autoCaptures.filter((c) => c.id !== null).length;
-    steps.push(`自动穿透 ${rowRefs.length} 行,解析到 job_id ${hit} 个`);
+    steps.push(`自动穿透 ${rowRefs.length} 行,解析到 ID ${hit} 个`);
   }
 
   if (records !== undefined) {
@@ -188,6 +197,9 @@ export async function runReadRecommend(ctx: UiContext, input: RecommendInput): P
     dryRun: input.dryRun,
     label: "列表页",
     recordsExtractor: (snap) => extractCandidateRecords(snap),
+    autoCaptureRows: input.withIds === true,
+    autoCaptureRowRefs: (snap) => candidateRowIndexes(snap.refs).map((i) => snap.refs[i].ref),
+    autoCaptureField: "resume_id",
   });
   if (input.jobId !== undefined && input.jobId !== "") {
     outcome.steps.unshift(`jobId=${input.jobId}(岗位上下文参数待联调确认,当前按页面默认呈现)`);

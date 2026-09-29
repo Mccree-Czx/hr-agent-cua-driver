@@ -45,11 +45,13 @@ export async function handleResume(cfg: DriverConfig, args: ParsedArgs): Promise
   });
 }
 
-/** recommend [--jobId <id>] [--url <页面>] [--capture-ids --ref <pN:M> ...] [--id-param resIdEncode] [--dry-run] [--json] */
+/** recommend [--jobId <id>] [--url <页面>] [--with-ids] [--capture-ids --ref <pN:M> ...] [--id-param resIdEncode] [--dry-run] [--json]
+ * --with-ids: 自动逐卡穿透取 resume_id(预览层「简历编号」回退通道)并合并进 records */
 export async function handleRecommend(cfg: DriverConfig, args: ParsedArgs): Promise<number> {
   const jobId = flagValue(args, "jobId") ?? undefined;
   const pageUrl = flagValue(args, "url") ?? undefined;
   const idParam = flagValue(args, "id-param") ?? undefined;
+  const withIds = args.flags["with-ids"] === true;
   const captureRefs = args.flags["capture-ids"] === true ? (args.multi.ref ?? []) : [];
   const dryRun = args.flags["dry-run"] === true;
   if (args.flags["capture-ids"] === true && captureRefs.length === 0) {
@@ -57,7 +59,7 @@ export async function handleRecommend(cfg: DriverConfig, args: ParsedArgs): Prom
     return 1;
   }
   return withContext(cfg, args, async (ctx) => {
-    const outcome = await runReadRecommend(ctx, { jobId, pageUrl, captureRefs, idParam, dryRun });
+    const outcome = await runReadRecommend(ctx, { jobId, pageUrl, captureRefs, idParam, dryRun, withIds });
     printRaw(outcome);
   });
 }

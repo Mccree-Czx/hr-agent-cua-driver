@@ -227,6 +227,7 @@ test("extractCandidateRecords:真机样本结构(温女士卡片序列)", () => 
     expect_city: "墨西哥",
     expect_position: "海外销售",
     expect_salary: "15-20K",
+    raw_text: "27岁\n3年\n本科\n济南\n期望：\n墨西哥\n海外销售\n15-20K\n机械/设备",
   });
 });
 

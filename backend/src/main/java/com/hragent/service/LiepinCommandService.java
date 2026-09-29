@@ -67,19 +67,29 @@ public class LiepinCommandService {
         return JsonExtractor.parse(result.stdout());
     }
 
-    /** 平台推荐候选人 → 数组(依赖猎聘上已发布的职位) */
+    /**
+     * 平台推荐候选人 → 数组(依赖猎聘上已发布的职位)。
+     * 双通道归一为数组输出:
+     * - legacy(liepin-cli):直接为数组(含 resume_id/name/talentId 等);
+     * - UI(cua-liepin-driver):输出 {records:[{name,age,expect_position,...,resume_id?}],...};
+     *   --with-ids 逐卡穿透保证 resume_id 可得(评分链依赖其落库触发详情补齐)。
+     */
     public List<JsonNode> recommend(LiepinAccount account, String jobId, Duration timeout) {
         if (jobId == null || !jobId.matches("[1-9][0-9]*")) {
             throw BizException.badRequest("推荐必须指定有效的猎聘岗位 ID");
         }
-        CliResult result = run(account, timeout, "recommend", "--jobId", jobId, "--json");
+        boolean ui = cuaCommandResolver.useUi("recommend");
+        CliResult result = ui
+                ? run(account, timeout, "recommend", "--jobId", jobId, "--with-ids", "--json")
+                : run(account, timeout, "recommend", "--jobId", jobId, "--json");
         JsonNode node = JsonExtractor.parse(result.stdout())
                 .orElseThrow(() -> BizException.badRequest("recommend 输出无有效 JSON"));
-        if (!node.isArray()) {
-            throw BizException.badRequest("recommend 输出不是数组: " + truncate(result.stdout()));
+        JsonNode rows = ui ? node.path("records") : node;
+        if (!rows.isArray()) {
+            throw BizException.badRequest(ui ? "recommend(UI)输出缺少 records 数组" : "recommend 输出不是数组: " + truncate(result.stdout()));
         }
         List<JsonNode> list = new ArrayList<>();
-        node.forEach(list::add);
+        rows.forEach(list::add);
         return list;
     }
 

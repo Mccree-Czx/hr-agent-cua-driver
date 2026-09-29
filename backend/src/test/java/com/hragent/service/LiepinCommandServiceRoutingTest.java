@@ -171,4 +171,24 @@ class LiepinCommandServiceRoutingTest {
         assertEquals("1", jobs.get(0).path("jobId").asText());
         verify(cua, never()).execute(any(), any(), any(String[].class));
     }
+
+    @Test
+    void uiRecommendReadsRecordsWithResumeId() throws Exception {
+        enableUi("recommend");
+        when(cua.execute(any(), any(), any(String[].class)))
+                .thenReturn(new CliResult(0,
+                        "{\"extraction_status\":\"validated\",\"records\":[{\"name\":\"温女士\",\"expect_position\":\"海外销售\",\"resume_id\":\"eb75dde295fdSc7f903cb4428\"}]}",
+                        "", false));
+
+        List<JsonNode> cands = service.recommend(account, "42", Duration.ofMinutes(1));
+
+        assertEquals(1, cands.size());
+        assertEquals("温女士", cands.get(0).path("name").asText());
+        assertEquals("eb75dde295fdSc7f903cb4428", cands.get(0).path("resume_id").asText());
+        ArgumentCaptor<String[]> captor = ArgumentCaptor.forClass(String[].class);
+        verify(cua, times(1)).execute(eq(account), any(), captor.capture());
+        assertTrue(java.util.Arrays.asList(captor.getValue()).contains("--with-ids"),
+                "UI 通道必须带 --with-ids 保证 resume_id 可得");
+        verify(legacy, never()).execute(any(), any(), any(String[].class));
+    }
 }

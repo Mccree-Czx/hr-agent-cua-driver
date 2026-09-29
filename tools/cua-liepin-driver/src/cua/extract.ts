@@ -358,10 +358,25 @@ export interface CandidateRecord {
   expect_city: string | null;
   expect_position: string | null;
   expect_salary: string | null;
+  /** 候选人区间原始文本(评分提示词信息量保真;总是生成) */
+  raw_text?: string;
+  /** 穿透获得的简历编号(recommend --with-ids;预览层「简历编号」回退通道) */
+  resume_id?: string | null;
 }
 
 /** 候选人姓名特征(隐私化展示:姓+女士/先生) */
 export const CANDIDATE_NAME_RE = /^[\u4e00-\u9fa5]{1,3}(女士|先生)$/;
+
+/** 候选人姓名节点索引(供 autoCapture 逐卡穿透定位) */
+export function candidateRowIndexes(refs: SnapshotRef[]): number[] {
+  const out: number[] = [];
+  refs.forEach((r, i) => {
+    if (r.name !== null && CANDIDATE_NAME_RE.test(r.name.trim())) {
+      out.push(i);
+    }
+  });
+  return out;
+}
 
 /**
  * 抽取推荐卡片候选人列表。
@@ -371,12 +386,7 @@ export const CANDIDATE_NAME_RE = /^[\u4e00-\u9fa5]{1,3}(女士|先生)$/;
  */
 export function extractCandidateRecords(snap: SnapshotResult): CandidateRecord[] {
   const refs = snap.refs;
-  const idxs: number[] = [];
-  refs.forEach((r, i) => {
-    if (r.name !== null && CANDIDATE_NAME_RE.test(r.name.trim())) {
-      idxs.push(i);
-    }
-  });
+  const idxs = candidateRowIndexes(refs);
   const records: CandidateRecord[] = [];
   for (let k = 0; k < idxs.length; k++) {
     const start = idxs[k];
@@ -391,6 +401,7 @@ export function extractCandidateRecords(snap: SnapshotResult): CandidateRecord[]
       expect_position: null,
       expect_salary: null,
     };
+    const texts: string[] = [];
     let expectSeen = false;
     for (let i = start + 1; i < end; i++) {
       const name = refs[i].name;
@@ -398,6 +409,7 @@ export function extractCandidateRecords(snap: SnapshotResult): CandidateRecord[]
         continue;
       }
       const text = name.trim();
+      texts.push(text);
       if (record.age === null && /^\d{2}岁$/.test(text)) {
         record.age = text;
         continue;
@@ -426,6 +438,7 @@ export function extractCandidateRecords(snap: SnapshotResult): CandidateRecord[]
         record.location = text;
       }
     }
+    record.raw_text = texts.join("\n");
     records.push(record);
   }
   return records;
