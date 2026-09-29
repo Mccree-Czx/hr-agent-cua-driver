@@ -17,7 +17,7 @@ import {
   rawTextOf,
   textLinesOf,
 } from "../cua/extract.js";
-import { clickRef, type SnapshotResult } from "../cua/session.js";
+import { clickRef, type SnapshotRef, type SnapshotResult } from "../cua/session.js";
 import { takeSnapshot, type UiContext } from "../cua/ui-actions.js";
 import { checkPageState, navigateChecked } from "./common.js";
 
@@ -208,17 +208,61 @@ export async function runReadRecommend(ctx: UiContext, input: RecommendInput): P
 }
 
 export interface ChatMsgInput {
-  /** 会话页 URL(联调期必填:会话页 URL 公式待确认) */
+  /** 会话页 URL(缺省按 --name 模式固定 /chat/im) */
   pageUrl: string;
   imId?: string;
+  /** UI 会话键:候选人名(替代 im_id;2026-09-29 真机:会话行可精确名定位) */
+  name?: string;
   dryRun: boolean;
 }
 
-/** 会话消息页读取(发送方启发式与消息结构待联调) */
+/**
+ * 会话行定位(2026-09-29 type-send 真机验证):优先精确名 + statictext + click;
+ * 回退包含匹配并排除"收到了 X 的简历"类含名文案。
+ */
+export function findConversationRow(refs: SnapshotRef[], name: string): SnapshotRef | null {
+  const exact = refs.find((r) => r.name === name && r.role === "statictext" && r.actions.includes("click"));
+  if (exact !== undefined) {
+    return exact;
+  }
+  return (
+    refs.find(
+      (r) =>
+        r.name !== null &&
+        r.name.includes(name) &&
+        r.actions.includes("click") &&
+        !/(收到了|这是|简历。$)/.test(r.name),
+    ) ?? null
+  );
+}
+
+/** 会话消息页读取(--name 会话名键模式:导航会话页→点开会话→抽取消息文本) */
 export async function runReadChatMsg(ctx: UiContext, input: ChatMsgInput): Promise<RawPageOutcome> {
   const steps: string[] = [];
-  const { lines } = await readPage(ctx, input.pageUrl);
-  steps.push(`会话页文本行 ${lines.length}`);
+  let lines: string[];
+
+  if (input.name !== undefined && input.name !== "") {
+    await navigateChecked(ctx, input.pageUrl);
+    const snap = await takeSnapshot(ctx);
+    const row = findConversationRow(snap.refs, input.name);
+    if (row === null) {
+      throw new CuaError("failed", `会话列表中未找到「${input.name}」(按名定位,可能未加载或名称不符)`);
+    }
+    steps.push(`会话行 ${row.ref}「${row.name ?? ""}」`);
+    if (ctx.dryRun) {
+      steps.push("dry-run:不点开会话");
+    } else {
+      await clickRef(ctx.client, ctx.session, row.ref);
+      await ctx.sleep(2_000);
+    }
+    lines = textLinesOf(await takeSnapshot(ctx));
+    steps.push(`会话消息文本行 ${lines.length}`);
+  } else {
+    const result = await readPage(ctx, input.pageUrl);
+    lines = result.lines;
+    steps.push(`会话页文本行 ${lines.length}`);
+  }
+
   if (input.imId !== undefined && input.imId !== "") {
     steps.push(`im_id=${input.imId}(仅留痕;UI 按 --url 直达会话)`);
   }

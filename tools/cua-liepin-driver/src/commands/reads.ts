@@ -86,16 +86,20 @@ export async function handleChatlist(cfg: DriverConfig, args: ParsedArgs): Promi
   });
 }
 
-/** chatmsg --url <会话页> [--imId <对方会话>] [--json] */
+/** chatmsg --url <会话页> | --name <候选人名> [--imId <对方会话>] [--json]
+ * --name: UI 会话名键模式(替代 im_id;导航默认 /chat/im 并点开会话) */
 export async function handleChatMsg(cfg: DriverConfig, args: ParsedArgs): Promise<number> {
-  const url = requireUrl(args, "chatmsg", "会话页(可直接打开某候选人的沟通页)");
-  if (url === null) {
+  const name = flagValue(args, "name") ?? undefined;
+  const urlArg = flagValue(args, "url");
+  const url = (urlArg ?? (name !== undefined ? "https://lpt.liepin.com/chat/im" : "")).trim();
+  if (url === "") {
+    console.error("chatmsg: 需要 --url <会话页> 或 --name <候选人名>(会话名键模式自动导航 /chat/im)");
     return 1;
   }
   const imId = flagValue(args, "imId") ?? undefined;
   const dryRun = args.flags["dry-run"] === true;
   return withContext(cfg, args, async (ctx) => {
-    printRaw(await runReadChatMsg(ctx, { pageUrl: url, imId, dryRun }));
+    printRaw(await runReadChatMsg(ctx, { pageUrl: url, imId, name, dryRun }));
   });
 }
 

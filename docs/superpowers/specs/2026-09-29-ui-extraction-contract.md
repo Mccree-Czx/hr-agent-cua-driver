@@ -159,3 +159,25 @@ UI 输出形状:
 - **joblist records(已完成,后端已归一)**:`extractJobRecords` 输出 `[{title,city,salary,refreshed_at,status,jobId?}]`(行边界=下一职位行 link;字段缺失置 null;字段名与 legacy 输出对齐);`joblist --with-ids` 自动逐行穿透(上限 20 行)补 jobId;`extraction_status="validated"` 表示 records 非空;后端 `LiepinCommandService.jobList` UI 分支读 records(调 `--with-ids`),legacy 保持数组直读;records 抽取对渲染完整度敏感(锁屏/未加载时为空);
 - **recommend records(已完成,后端已归一)**:`extractCandidateRecords` 输出 `[{name,age,experience,education,location,expect_city,expect_position,expect_salary,raw_text,resume_id?}]`;卡片序列=姓名→年龄→经验→学历→现居→"期望:"→期望城市→期望职位→期望薪资;行边界=下一姓名节点;`raw_text`=候选人区间原始文本(评分提示词保真);`recommend --with-ids` 逐卡穿透(预览层「简历编号」回退通道)补 resume_id;真机样本(rec-full.json,1200 refs)验证 7 张卡片全识别(raw_text 196 字符/卡片);后端 `recommend` UI 分支读 records(调 --with-ids)——契约链:resume_id 落库 → ScoringEngine 触发 resume 详情补齐 want_title(评分门禁);
 - 剩余 records 补齐(chatlist/chatmsg/search):待解锁后取真机样本按同模式实现(search 页 URL 也待确认)。
+
+## 8. W6 切换就绪矩阵(2026-09-29 盘点)
+
+全量切换(`hr-agent.cua.commands.<命令>=ui` 默认改 ui)的前置条件 = 每命令「驱动实现 + 真机验证 + 后端归一」三列齐备:
+
+| 命令 | 驱动实现 | 真机验证 | 后端归一 | 缺口/备注 |
+|------|:---:|:---:|:---:|------|
+| login | ✓ | ✓(自动启动/复用/锁屏快速失败) | ✓(原契约) | - |
+| greet | ✓ | ✓(真实打招呼成功) | ✓(原契约) | - |
+| send-message | ✓ | ✓(回显验证) | ✓ | - |
+| request-resume | ✓ | ⚠ 入口定位✓,live click 待下一位未发简历候选人 | ✓ | 需约定测试人选 |
+| resume | ✓ | ✓(want_title=海外销售) | ✓ | - |
+| recommend | ✓ + records | ⚠ records/--with-ids 待解锁复验 | ✓(UI 读 records+--with-ids) | 20 卡穿透≈6-8s/卡;resume_id 通道=预览层「简历编号」(已验证可达) |
+| search | ✓(基础抽取) | ✗ | ✗ | **URL=/search(legacy 代码确认,页面结构待联调)**;records 未实现 |
+| chatlist | ✓(基础抽取) | ⚠(会话页 URL 已知) | ✗ | **对方 im_id 无 UI 直接通道(硬缺口)**:legacy 的 readLptImId 只能读我方 imId_2(cookie),非会话对方 id;建议方案:chat-map 缓存(名→id,由 chatmsg 侧维护)待设计 |
+| chatmsg | ✓(基础抽取) | ✗ | ✗ | 依赖 im_id(同上) |
+| joblist | ✓ + records | ✓(records/穿透 dry-run) | ✓ | - |
+| jobpublish | ✓(全字段) | ✓(发布 85915821 成功) | ✓ | 类别编码→文本映射(后端传 jobCategory 编码,UI 以名称关键词联动单选;如需精确类别需加文本参数) |
+| jobdelete | ✓(待发布删除/招聘中结束) | ✓(删除成功) | ✓ | “招聘中”的 结束→已关闭→删除 后半段待验证 |
+| attach-fetch / attach-download | ✓(三态+签名校验) | ✗ | ✓(三态契约) | viewer 下载按钮路径待验证(入口线索:会话"收到简历"视图批量条「全部勾选+浏览简历」) |
+
+**结论**:切换阻塞项 = ① search(页面结构与 records) ② chatlist/chatmsg(im_id 通道设计决策) ③ attach viewer 下载 ④ request-resume live click。解锁后优先级:attach viewer → joblist/recommend `--with-ids` 复验 → search 探索 → chatlist/chatmsg 样本采集。

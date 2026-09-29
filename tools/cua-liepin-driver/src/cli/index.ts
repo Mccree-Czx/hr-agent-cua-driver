@@ -43,7 +43,8 @@ function printHelp(): void {
                                                    点击穿透取 resume_id(联调原语,--dry-run 抑制点击)
   search --url <页面>                             人才搜索页抽取(--url 待联调确认)
   chatlist --url <页面>                           沟通列表页抽取(--url 待联调确认)
-  chatmsg --url <会话页> [--imId <对方会话>]      会话消息读取(附件卡片迹象检测)
+  chatmsg --url <会话页> | --name <候选人名>         会话消息读取(附件卡片迹象检测;
+         --name=会话名键模式,替代 im_id,自动导航 /chat/im 并点开会话)
   joblist [--url <页面>] [--with-ids] [--capture-ids --ref <pN:M> ...]  职位列表页抽取(默认 /job/manager;结构化 records)
         点击穿透取 ejob_id(--with-ids 自动逐行穿透并合并进 records;--id-param 默认 ejob_id)
   attach-fetch --url <会话页> --out <目录>        附件检出+下载(三态输出;--imId 留痕;--dry-run)

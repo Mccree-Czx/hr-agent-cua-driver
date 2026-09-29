@@ -194,7 +194,42 @@ test("captureIdsByClickThrough:dry-run 不点击、只报告 ref", async () => {
   assert.equal(s.calls.length, 0, "dry-run 必须零调用");
 });
 
-test("runReadChatMsg:附件卡片文案迹象检测", async () => {
+test("runReadChatMsg --name 模式:点开命名会话并抽取消息(会话名键替代 im_id)", async () => {
+  const s = new Scenario();
+  const url = "https://lpt.liepin.com/chat/im";
+  const row = { name: "邵女士", role: "statictext", actions: ["click"] };
+  s.nav()
+    .snap([row]) // checkPageState
+    .snap([row, { name: "你好~我这里有个职位很适合你", role: "statictext" }]) // 会话列表
+    .click() // 点开会话
+    .snap([row, { name: "邵女士的简历.pdf", role: "statictext" }]); // 消息区(含附件卡)
+
+  const outcome = await runReadChatMsg(makeCtx(s), { pageUrl: url, name: "邵女士", dryRun: false });
+
+  assert.equal(outcome.attachment_hint, true);
+  assert.ok(outcome.steps.some((l) => l.includes("会话行")));
+  assert.deepEqual(s.tools(), [
+    "browser_navigate",
+    "get_browser_state",
+    "get_browser_state",
+    "browser_click",
+    "get_browser_state",
+  ]);
+});
+
+test("runReadChatMsg --name 模式:会话未找到时报明确错误", async () => {
+  const s = new Scenario();
+  s.nav()
+    .snap([{ name: "其他人", role: "statictext", actions: ["click"] }])
+    .snap([{ name: "其他人", role: "statictext", actions: ["click"] }]);
+
+  await assert.rejects(
+    runReadChatMsg(makeCtx(s), { pageUrl: "https://lpt.liepin.com/chat/im", name: "邵女士", dryRun: false }),
+    /未找到「邵女士」/,
+  );
+});
+
+test("runReadChatMsg url 模式:附件卡片文案迹象检测", async () => {
   const s = new Scenario();
   const url = "https://lpt.liepin.com/chat?imId=abc";
   s.nav()
