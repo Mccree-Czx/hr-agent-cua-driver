@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   collectLines,
   dedupeConsecutive,
+  extractResumeNo,
   extractWantTitles,
   hasAttachmentHint,
   matchEducation,
@@ -109,6 +110,22 @@ test("queryParam/parseResumeIdFromUrl:仅直接参数可解析(不猜 backurl)",
   assert.equal(parseResumeIdFromUrl("https://lpt.liepin.com/resume/detail?resIdEncode=abc123&sfrom=R"), "abc123");
   assert.equal(queryParam("https://lpt.liepin.com/login?backurl=%2Fresume%2Fdetail%3FresIdEncode%3Dx", "resIdEncode"), null);
   assert.equal(queryParam("not-a-url", "resIdEncode"), null);
+});
+
+test("extractResumeNo:预览层「简历编号」序列式与内联式", () => {
+  const seq = snapOf(["邵女士", "简历编号", ":", "eb75dde295fdSc7f903cb4428", "请输入备注内容"]);
+  const hit = extractResumeNo(seq);
+  assert.equal(hit?.value, "eb75dde295fdSc7f903cb4428");
+  assert.equal(hit?.ref, "p1:3");
+
+  const inline = snapOf(["简历编号:eb75dde295fdSc7f903cb4428"]);
+  assert.equal(extractResumeNo(inline)?.value, "eb75dde295fdSc7f903cb4428");
+});
+
+test("extractResumeNo:无编号/值非法时返回 null(宁缺毋滥)", () => {
+  assert.equal(extractResumeNo(snapOf(["邵女士", "工作经历"])), null);
+  // 值的形状不符(含中文)不采纳
+  assert.equal(extractResumeNo(snapOf(["简历编号", ":", "未知编号"])), null);
 });
 
 test("字段模式:薪资/年限/学历", () => {

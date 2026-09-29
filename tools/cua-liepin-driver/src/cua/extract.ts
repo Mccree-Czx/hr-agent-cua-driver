@@ -200,6 +200,43 @@ export function parseResumeIdFromUrl(url: string): string | null {
   return queryParam(url, "resIdEncode");
 }
 
+/** 「简历编号」值命中(值 + 所在 ref,ref 供诊断) */
+export interface ResumeNoHit {
+  value: string;
+  ref: string;
+}
+
+/**
+ * 抽取「简历编号」值(resIdEncode 的 UI 获取路径;联调验证 2026-09-29,
+ * 实测值 eb75dde295fdSc7f903cb4428 导航 resume/detail 打开目标候选人简历)。
+ *
+ * 预览层(#preview)中为 statictext 序列:[简历编号] [冒号] [<值>];
+ * 也兼容同节点形如 "简历编号:xxx" 的写法。值限定为字母数字串。
+ */
+export function extractResumeNo(snap: SnapshotResult): ResumeNoHit | null {
+  const refs = snap.refs;
+  for (let i = 0; i < refs.length; i++) {
+    const r = refs[i];
+    if (r.name === null) {
+      continue;
+    }
+    const inline = /^简历编号\s*[:：]\s*([A-Za-z0-9]{8,64})$/.exec(r.name);
+    if (inline !== null) {
+      return { value: inline[1], ref: r.ref };
+    }
+    if (!/^简历编号\s*[:：]?$/.test(r.name)) {
+      continue;
+    }
+    for (let j = i + 1; j < Math.min(i + 6, refs.length); j++) {
+      const v = refs[j];
+      if (v.role === "statictext" && v.name !== null && /^[A-Za-z0-9]{8,64}$/.test(v.name)) {
+        return { value: v.name, ref: v.ref };
+      }
+    }
+  }
+  return null;
+}
+
 /** 薪资模式:"20-40K" / "30-50K·15薪" / "25K" (取首段原文) */
 export function matchSalary(text: string): string | null {
   const m = /(\d{1,3}\s*-\s*\d{1,3}\s*[Kk]|[1-9]\d{1,2}\s*[Kk])[·\s]?\d{0,2}薪?/.exec(text);

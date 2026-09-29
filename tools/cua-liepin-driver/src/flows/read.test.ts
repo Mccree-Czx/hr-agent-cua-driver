@@ -140,10 +140,45 @@ test("captureIdsByClickThrough:点击→读 URL→返回列表页", async () => 
 
   assert.equal(captures.length, 1);
   assert.equal(captures[0].id, "cap-1");
+  assert.equal(captures[0].id_source, "url");
   assert.equal(captures[0].url, "https://lpt.liepin.com/resume/detail?resIdEncode=cap-1");
   assert.deepEqual(s.tools(), ["browser_click", "get_browser_state", "browser_navigate"]);
   assert.equal(s.calls[0].args.ref, "p1:5");
   assert.equal(s.calls[2].args.url, RESUME_URL, "穿透后必须返回列表页");
+});
+
+test("captureIdsByClickThrough:URL 无 id 时回退读预览层「简历编号」(联调校准)", async () => {
+  const s = new Scenario();
+  s.click()
+    .snap(
+      [
+        { name: "邵女士" },
+        { name: "简历编号" },
+        { name: ":" },
+        { name: "eb75dde295fdSc7f903cb4428" },
+        { name: "请输入备注内容", role: "textbox" },
+      ],
+      "https://lpt.liepin.com/chat/im#preview",
+    )
+    .nav();
+
+  const captures = await captureIdsByClickThrough(makeCtx(s), ["p1:7"], "https://lpt.liepin.com/chat/im", "resIdEncode", false);
+
+  assert.equal(captures[0].id, "eb75dde295fdSc7f903cb4428");
+  assert.equal(captures[0].id_source, "preview");
+  assert.equal(captures[0].url, "https://lpt.liepin.com/chat/im#preview");
+  assert.deepEqual(s.tools(), ["browser_click", "get_browser_state", "browser_navigate"]);
+});
+
+test("captureIdsByClickThrough:预览层也无编号时不伪造 id", async () => {
+  const s = new Scenario();
+  s.click().snap([{ name: "温女士" }, { name: "简历备注" }], "https://lpt.liepin.com/recommend#preview").nav();
+
+  const captures = await captureIdsByClickThrough(makeCtx(s), ["p1:9"], "https://lpt.liepin.com/recommend", "resIdEncode", false);
+
+  assert.equal(captures[0].id, null);
+  assert.equal(captures[0].id_source, "url");
+  assert.equal(captures[0].url, "https://lpt.liepin.com/recommend#preview");
 });
 
 test("captureIdsByClickThrough:dry-run 不点击、只报告 ref", async () => {

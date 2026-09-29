@@ -7,7 +7,7 @@
  */
 
 import { CuaError } from "../contract.js";
-import { hasAttachmentHint, queryParam, rawTextOf, textLinesOf } from "../cua/extract.js";
+import { extractResumeNo, hasAttachmentHint, queryParam, rawTextOf, textLinesOf } from "../cua/extract.js";
 import { clickRef, type SnapshotResult } from "../cua/session.js";
 import { takeSnapshot, type UiContext } from "../cua/ui-actions.js";
 import { checkPageState, navigateChecked } from "./common.js";
@@ -17,6 +17,8 @@ export interface Capture {
   ref: string;
   url: string;
   id: string | null;
+  /** id 来源:url=点击后 URL 参数;preview=预览层「简历编号」(非 dry-run 均有值) */
+  id_source?: "url" | "preview";
 };
 
 export interface RawPageOutcome {
@@ -68,9 +70,19 @@ export async function captureIdsByClickThrough(
     await ctx.sleep(1_500);
     const snap = await takeSnapshot(ctx);
     const url = snap.page.url;
-    const id = queryParam(url, idParam);
-    captures.push({ ref, url, id });
-    ctx.log(`[穿透] ${ref} → ${id ?? "(未解析到 " + idParam + ")"} @ ${url.slice(0, 120)}`);
+    let id = queryParam(url, idParam);
+    let idSource: "url" | "preview" = "url";
+    if (id === null) {
+      // 2026-09-29 联调校准:推荐卡片/会话预览点击后 URL 不变(仅 #preview),
+      // resIdEncode 在预览层「简历编号」字段(已验证可达 resume/detail)。
+      const hit = extractResumeNo(snap);
+      if (hit !== null) {
+        id = hit.value;
+        idSource = "preview";
+      }
+    }
+    captures.push({ ref, url, id, id_source: idSource });
+    ctx.log(`[穿透] ${ref} → ${id ?? "(未解析到 " + idParam + ")"} [${idSource}] @ ${url.slice(0, 120)}`);
 
     // 返回列表页(点击可能导致导航;refs 已在本次穿透中消费完,无需保留)
     await ctx.client.requireOk("browser_navigate", {
