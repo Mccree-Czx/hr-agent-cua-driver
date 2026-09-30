@@ -294,6 +294,10 @@ export async function snapshot(
     target_id: session.targetId,
     tab_id: session.activeTabId,
     snapshot_format: "semantic_v2",
+    // 2026-09-30 真机突破:include_screenshot 强制 tab 视口捕获,实测显著提升语义树完整度
+    // (无此项时同页反复导航+快照 12 轮均只得残缺"导航壳";开启后首尝试即 245 refs/95 named),
+    // 代价为响应携带 PNG(约 700KB/次),以完整度优先
+    include_screenshot: true,
   };
   if (query !== undefined && query !== "") {
     args.query = query;

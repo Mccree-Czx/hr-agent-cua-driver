@@ -231,6 +231,17 @@ UI 输出形状:
   → 结果快照 → extractCandidateRecords;提交按钮未出现时清场重试一次;
 - **真机状态**:引导卡已关闭;因语义快照间歇残缺,提交按钮获取尚未稳定命中(readPage 6 次重试仍失败时诚实报错);
 - **待续**:在快照完整窗口(daemon 重启后立即执行)重跑验证结果页卡片结构与 records。
+
+### 快照完整性终极修复(2026-09-30 突破)
+- **`include_screenshot:true` 强制 tab 视口捕获,实测显著提升语义树完整度**:
+  无此项时同页反复清场+导航+快照 12 轮均只得残缺"导航壳"(122 refs/34 named);
+  开启后**首个尝试即 245 refs/95 named**,连续多命令稳定;
+- 已固化进 `snapshot()`(session.ts);代价为响应携带 PNG(约 700KB/次),以完整度优先;
+- **真机验证(修复后)**:
+  - `joblist --with-ids`: 全字段(city/salary/refreshed_at/status) + `jobId=85911643`(穿透成功), validated;
+  - `chatlist`: records 4+ 条(name/position/time/last_msg;时间锚含 HH:MM 与"昨天"混合), validated;
+  - `search`: 引导卡未出现、已提交搜索、结果页 92 行(条件面板;结果列表渲染待续校准);
+- **残留可优化**: chatlist 末条 records 误抽(last_msg 被当作下一行 name,待时间锚去重)。
 - **daemon 重启规律(已验证两次)**:`cua-driver stop` + `serve --grant existing-profile` 后**立即执行**的命令可获得完整快照
   (attach 会话行/chatlist 96 行 均命中);已作为"完整快照优先策略"手段:重要读操作前可先重启 daemon。
 

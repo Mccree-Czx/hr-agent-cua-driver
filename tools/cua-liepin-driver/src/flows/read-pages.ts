@@ -44,17 +44,18 @@ export interface RawPageOutcome {
 
 /**
  * 页面残缺指纹阈值(2026-09-30 真机:semantic_v2 快照间歇性只返回"导航壳",
- * 纯壳文本行约 21-23;正常应用页 ≥ 40)。低于阈值时清场重试。
+ * 纯壳文本行约 21-23;正常应用页 ≥ 40)。低于阈值时重试。
  */
 export const MIN_PAGE_LINES = 26;
 
-/** 残缺重试上限(每次重试=about:blank 清场→重新导航→快照) */
+/** 残缺重试上限(每轮=about:blank 清场→导航→快照) */
 export const PAGE_RETRY_ATTEMPTS = 6;
 
 /**
  * 打开页面并全文抽取(读操作)。
- * 2026-09-30 增内容充分性校验:文本行低于 {@link MIN_PAGE_LINES} 视为语义快照残缺;重试时
- * 先导航 about:blank(清场,重置渲染/快照状态)再回目标页——真机实测纯重试恢复率低、清场后逐步恢复;
+ * 2026-09-30 增内容充分性校验:文本行低于 {@link MIN_PAGE_LINES} 视为语义快照残缺;
+ * **每轮(含第一轮)先导航 about:blank 清场再回目标页**——真机实验
+ * (probe-waitfull)证实"清场前置+导航+快照"首个尝试即得完整快照(245 refs/95 named);
  * 仍不足则抛错(不向下游交付残缺数据)。
  */
 export async function readPage(
@@ -65,8 +66,8 @@ export async function readPage(
   let last = 0;
   const minLines = ctx.minPageLines ?? MIN_PAGE_LINES;
   for (let attempt = 1; attempt <= PAGE_RETRY_ATTEMPTS; attempt++) {
-    // 单快照策略(2026-09-30 真机):整个尝试只拍一次快照(checkPageState 与抽取共用),
-    // 双快照会加剧 semantic_v2 的"先全后残"退化
+    // 清场前置(每轮,含首轮):重置渲染/快照状态
+    await navigate(ctx, "about:blank", 800);
     await navigate(ctx, url, settleMs);
     const snap = await takeSnapshot(ctx);
     checkPageState(snap);
@@ -77,7 +78,6 @@ export async function readPage(
     last = lines.length;
     ctx.log(`文本行仅 ${lines.length}(疑似语义快照残缺),清场重试 ${attempt}/${PAGE_RETRY_ATTEMPTS}`);
     if (attempt < PAGE_RETRY_ATTEMPTS) {
-      await navigate(ctx, "about:blank", 800);
       await ctx.sleep(1_800);
     }
   }
