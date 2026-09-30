@@ -346,10 +346,11 @@ test("attach-fetch --name 会话名键模式:导航会话页→点开会话→�
   const s = new Scenario();
   const outDir = tempDir();
   try {
-    s.nav("https://lpt.liepin.com/chat/im") // navigateChecked:导航 + checkPageState 快照
-      .snap(["邵女士"], CHAT_URL, true) // 会话列表(会话行可点击)
+    s.push({ tool: "browser_navigate", payload: {} }) // about:blank 清场
+      .push({ tool: "browser_navigate", payload: {} }) // 目标页导航
+      .snap(["邵女士"], CHAT_URL, true) // 会话行快照
       .push({ tool: "browser_click", payload: {} }) // 点开会话
-      .snap(["邵越-中文简历.pdf"], CHAT_URL, true); // 会话消息区(附件卡片)
+      .snap(["邵越-中文简历.pdf"], CHAT_URL, true); // 附件卡片快照
     s.download(() => writeFileSync(join(outDir, "邵越-中文简历.pdf"), PDF_BYTES));
 
     const outcome = await runAttachFetchUi(makeCtx(s), { name: "邵女士", outDir, dryRun: false });
@@ -364,7 +365,7 @@ test("attach-fetch --name 会话名键模式:导航会话页→点开会话→�
       s.calls.map((c) => c.tool),
       [
         "browser_navigate",
-        "get_browser_state",
+        "browser_navigate",
         "get_browser_state",
         "browser_click",
         "get_browser_state",
@@ -382,10 +383,9 @@ test("attach --name 降级通道:列表不可用但目标会话已打开时继�
   const url = "https://lpt.liepin.com/chat/im";
   try {
     for (let i = 0; i < 6; i++) {
-      s.nav(url).snap(["其他人"], CHAT_URL, true); // 列表快照始终不含会话行
-      if (i < 5) {
-        s.push({ tool: "browser_navigate", payload: {} }); // about:blank 清场
-      }
+      s.push({ tool: "browser_navigate", payload: {} }); // about:blank 清场
+      s.push({ tool: "browser_navigate", payload: {} }); // 目标页导航
+      s.snap(["其他人"], CHAT_URL, true); // 列表快照始终不含会话行
     }
     // 降级检查:右侧详情区含目标名(特征伴随 26岁/硕士)
     s.snap(["邵女士", "26岁", "硕士"], CHAT_URL, true)
@@ -408,10 +408,9 @@ test("attach --name 会话未找到时报明确错误(清场重试 6 次后放�
   const url = "https://lpt.liepin.com/chat/im";
   try {
     for (let i = 0; i < 6; i++) {
-      s.nav(url).snap(["其他人"], CHAT_URL, true);
-      if (i < 5) {
-        s.push({ tool: "browser_navigate", payload: {} }); // about:blank 清场(裸导航)
-      }
+      s.push({ tool: "browser_navigate", payload: {} }); // about:blank 清场
+      s.push({ tool: "browser_navigate", payload: {} }); // 目标页导航
+      s.snap(["其他人"], CHAT_URL, true);
     }
     s.snap(["其他人"], CHAT_URL, true); // 降级检查:当前会话名(无详情特征)
 

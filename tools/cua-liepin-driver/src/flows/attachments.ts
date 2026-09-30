@@ -92,14 +92,15 @@ export async function runAttachCore(ctx: UiContext, input: AttachInput): Promise
         : "https://lpt.liepin.com/chat/im";
     let row: ReturnType<typeof findConversationRow> = null;
     for (let attempt = 1; attempt <= PAGE_RETRY_ATTEMPTS; attempt++) {
-      await navigateChecked(ctx, listUrl);
+      // 2026-09-30 与 readPage 同款:清场前置 + 单快照(include_screenshot 已在 snapshot() 固化)
+      await navigate(ctx, "about:blank", 800);
+      await navigate(ctx, listUrl, 3000);
       row = findConversationRow((await takeSnapshot(ctx)).refs, input.name);
       if (row !== null) {
         break;
       }
       note(`会话行未找到(疑似语义快照残缺),清场重试 ${attempt}/${PAGE_RETRY_ATTEMPTS}`);
       if (attempt < PAGE_RETRY_ATTEMPTS) {
-        await navigate(ctx, "about:blank", 800);
         await ctx.sleep(1_800);
       }
     }
