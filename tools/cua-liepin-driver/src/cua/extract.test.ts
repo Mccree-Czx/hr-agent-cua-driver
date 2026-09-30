@@ -279,7 +279,9 @@ test("extractCandidateRecords:多卡片边界与缺字段置 null", () => {
 test("extractCandidateRecords:搜索页遮罩名(乐**)识别(2026-09-30 真机)", () => {
   const snap = snapRefs([
     { name: "乐**" },
+    { name: "file-text" },
     { name: "42 Years" },
+    { name: "15 Service Years" },
     { name: "Master" },
     { name: "Shanghai" },
     { name: "期望：" },
@@ -290,6 +292,13 @@ test("extractCandidateRecords:搜索页遮罩名(乐**)识别(2026-09-30 真机)
   const records = extractCandidateRecords(snap);
   assert.equal(records.length, 1);
   assert.equal(records[0].name, "乐**", "搜索页遮罩姓名应被识别");
+  assert.equal(records[0].age, "42 Years", "英文年龄格式应识别");
+  assert.equal(records[0].experience, "15 Service Years", "英文年限格式应识别");
+  assert.equal(records[0].education, "Master", "英文学历应识别");
+  assert.equal(records[0].location, "Shanghai", "英文城市应识别(图标名 file-text 不得混入)");
+  assert.equal(records[0].expect_city, "Vietnam");
+  assert.equal(records[0].expect_position, "Business Manager/Supervisor");
+  assert.equal(records[0].expect_salary, "35-50K·13薪");
 });
 
 test("extractCandidateRecords:无姓名节点时返回空数组", () => {

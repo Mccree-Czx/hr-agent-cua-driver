@@ -237,21 +237,24 @@ export function extractResumeNo(snap: SnapshotResult): ResumeNoHit | null {
   return null;
 }
 
+/** 图标/控件名噪声(语义快照会把图标 accessible name 混入文本,2026-09-30 真机) */
+const ICON_NOISE_RE = /^(file-text|avatar|down|left|right|plus|close|search|reload|bell|select-down|message|folder-open|check-circle|close-circle|minus-square|circle-ellipsis|animation)$/i;
+
 /** 薪资模式:"20-40K" / "30-50K·15薪" / "25K" (取首段原文) */
 export function matchSalary(text: string): string | null {
   const m = /(\d{1,3}\s*-\s*\d{1,3}\s*[Kk]|[1-9]\d{1,2}\s*[Kk])[·\s]?\d{0,2}薪?/.exec(text);
   return m !== null ? m[0].replace(/\s+/g, "") : null;
 }
 
-/** 工作年限模式:"5年" / "5-10年" / "10年以上" */
+/** 工作年限模式:"5年" / "5-10年" / "10年以上" / "15 Service Years"(英文简历) */
 export function matchExperience(text: string): string | null {
-  const m = /(\d{1,2}\s*-\s*\d{1,2}\s*年|\d{1,2}\s*年以上|[1-9]\d?\s*年经验)/.exec(text);
-  return m !== null ? m[0].replace(/\s+/g, "") : null;
+  const m = /(\d{1,2}\s*-\s*\d{1,2}\s*年|\d{1,2}\s*年以上|[1-9]\d?\s*年经验|\d{1,2}\s+(?:Service\s+)?Years?)/.exec(text);
+  return m !== null ? m[0].replace(/\s+/g, " ").trim() : null;
 }
 
-/** 学历模式 */
+/** 学历模式(中文 + 英文简写,搜索页英文简历) */
 export function matchEducation(text: string): string | null {
-  const m = /(博士|硕士|MBA|本科|大专|专科|高中|中专)/.exec(text);
+  const m = /(博士|硕士|MBA|本科|大专|专科|高中|中专|\b(?:Ph\.?D|Master|Bachelor|College|Associate)\b)/.exec(text);
   return m !== null ? m[1] : null;
 }
 
@@ -516,12 +519,15 @@ export function extractCandidateRecords(snap: SnapshotResult): CandidateRecord[]
         continue;
       }
       const text = name.trim();
+      if (text === "" || ICON_NOISE_RE.test(text)) {
+        continue; // 图标名不得作为字段值
+      }
       texts.push(text);
-      if (record.age === null && /^\d{2}岁$/.test(text)) {
+      if (record.age === null && /^(\d{2}岁|\d{2} Years?)$/.test(text)) {
         record.age = text;
         continue;
       }
-      if (record.experience === null && /^(\d{1,2}年(以上|以内)?|\d{1,2}-\d{1,2}年)$/.test(text)) {
+      if (record.experience === null && /^(\d{1,2}年(以上|以内)?|\d{1,2}-\d{1,2}年|\d{1,2} (?:Service )?Years?)$/.test(text)) {
         record.experience = text;
         continue;
       }
@@ -534,14 +540,14 @@ export function extractCandidateRecords(snap: SnapshotResult): CandidateRecord[]
         continue;
       }
       if (expectSeen) {
-        if (record.expect_city === null && /^[\u4e00-\u9fa5]{2,6}$/.test(text)) {
+        if (record.expect_city === null && /^([\u4e00-\u9fa5]{2,6}|[A-Za-z][A-Za-z .-]{1,18})$/.test(text)) {
           record.expect_city = text;
-        } else if (record.expect_city !== null && record.expect_position === null && /^[\u4e00-\u9fa5]{2,10}$/.test(text)) {
+        } else if (record.expect_city !== null && record.expect_position === null && /^([\u4e00-\u9fa5]{2,10}|[A-Za-z][A-Za-z /&.-]{1,40})$/.test(text)) {
           record.expect_position = text;
         } else if (record.expect_salary === null && matchSalary(text) !== null) {
           record.expect_salary = matchSalary(text);
         }
-      } else if (record.location === null && /^[\u4e00-\u9fa5]{2,6}$/.test(text)) {
+      } else if (record.location === null && /^([\u4e00-\u9fa5]{2,6}|[A-Za-z][A-Za-z .-]{1,18})$/.test(text)) {
         record.location = text;
       }
     }

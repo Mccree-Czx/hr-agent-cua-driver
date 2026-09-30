@@ -420,11 +420,25 @@ export async function runReadChatMsg(ctx: UiContext, input: ChatMsgInput): Promi
   let lines: string[];
 
   if (input.name !== undefined && input.name !== "") {
-    await navigateChecked(ctx, input.pageUrl);
-    const snap = await takeSnapshot(ctx);
-    const row = findConversationRow(snap.refs, input.name);
+    // 与 attach 同款:清场前置+单快照+残缺重试+标签轮换(2026-09-30 会话名键统一)
+    let row: ReturnType<typeof findConversationRow> = null;
+    for (let attempt = 1; attempt <= PAGE_RETRY_ATTEMPTS; attempt++) {
+      await navigate(ctx, "about:blank", 800);
+      await navigate(ctx, input.pageUrl, 3_000);
+      row = findConversationRow((await takeSnapshot(ctx)).refs, input.name);
+      if (row !== null) {
+        break;
+      }
+      ctx.log(`会话行未找到(疑似语义快照残缺),清场重试 ${attempt}/${PAGE_RETRY_ATTEMPTS}`);
+      if (attempt < PAGE_RETRY_ATTEMPTS) {
+        if (ctx.rotateSession !== undefined) {
+          await ctx.rotateSession();
+        }
+        await ctx.sleep(1_800);
+      }
+    }
     if (row === null) {
-      throw new CuaError("failed", `会话列表中未找到「${input.name}」(按名定位,可能未加载或名称不符)`);
+      throw new CuaError("failed", `会话列表中未找到「${input.name}」(按名定位,已重试 ${PAGE_RETRY_ATTEMPTS} 次;可能名称不符)`);
     }
     steps.push(`会话行 ${row.ref}「${row.name ?? ""}」`);
     if (ctx.dryRun) {
