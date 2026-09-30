@@ -326,6 +326,31 @@ test("extractChatSessions:时间锚支持「昨天」等变体(2026-09-30 真机
   assert.equal(sessions[0].time, "昨天");
 });
 
+test("extractChatSessions:超长消息与内嵌时间不产生幻影会话(2026-09-30 修复)", () => {
+  const longMsg = "之前公司主要生产清洁用品和防晒品品类。".repeat(4); // >30 字符
+  const snap = snapRefs([
+    { name: "邵女士" },
+    { name: "海外ToB渠道销售（出海品牌）" },
+    { name: "昨天" },
+    { name: longMsg },
+    { name: "15:30" }, // 幻影锚:长文与时间样式均应被跳过,同名去重兜底
+  ]);
+  const sessions = extractChatSessions(snap);
+  assert.equal(sessions.length, 1, "不得产生幻影会话");
+  assert.equal(sessions[0].name, "邵女士");
+});
+
+test("extractChatSessions:通知卡噪声名(新收/3)不产生会话", () => {
+  const snap = snapRefs([
+    { name: "新收" },
+    { name: "3" },
+    { name: "11:08" },
+    { name: "收到了 潘女士、王思张等3人的简历" },
+  ]);
+  const sessions = extractChatSessions(snap);
+  assert.equal(sessions.length, 0, "通知卡噪声不得成为会话");
+});
+
 test("currentSessionName:详情区特征伴随识别当前会话;无特征返回 null", () => {
   const withDetail = snapRefs([{ name: "人才推荐" }, { name: "邵女士" }, { name: "26岁" }, { name: "硕士" }]);
   assert.equal(currentSessionName(withDetail), "邵女士");

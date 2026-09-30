@@ -16,14 +16,15 @@ const RESUME_URL = "https://lpt.liepin.com/resume/detail?resIdEncode=r-1&sfrom=R
 interface ScriptEntry {
   tool: string;
   payload: Record<string, unknown>;
+  refusal?: { code: string; message: string };
 }
 
 class Scenario {
   readonly calls: Array<{ tool: string; args: Record<string, unknown> }> = [];
   private queue: ScriptEntry[] = [];
 
-  expect(tool: string, payload: Record<string, unknown> = {}): this {
-    this.queue.push({ tool, payload });
+  expect(tool: string, payload: Record<string, unknown> = {}, refusal?: { code: string; message: string }): this {
+    this.queue.push({ tool, payload, refusal });
     return this;
   }
 
@@ -51,6 +52,11 @@ class Scenario {
     return this.expect("browser_click", { effect: "clicked" });
   }
 
+  /** 点击被拒(stale 重试场景) */
+  clickRefused(code: string): this {
+    return this.expect("browser_click", {}, { code, message: `refused (${code}): ref is stale - snapshot superseded` });
+  }
+
   client(): DriverClient {
     const client = new DriverClient({ bin: "fake", session: "test", timeoutMs: 1000 });
     (client as unknown as { callTool: (tool: string, args: Record<string, unknown>) => Promise<ToolCallResult> }).callTool =
@@ -62,6 +68,16 @@ class Scenario {
         }
         if (entry.tool !== tool) {
           throw new Error(`调用顺序不符: 期望 ${entry.tool}, 实际 ${tool}`);
+        }
+        if (entry.refusal !== undefined) {
+          return {
+            tool,
+            status: "refused",
+            refusalCode: entry.refusal.code,
+            refusalMessage: entry.refusal.message,
+            data: {},
+            raw: "",
+          };
         }
         return { tool, status: "ok", data: entry.payload, raw: JSON.stringify(entry.payload) };
       };
@@ -269,6 +285,33 @@ test("runReadList:autoCaptureRows 逐行穿透并把 job_id 合并进 records(jo
   assert.equal(records[0].jobId, "J9");
   assert.equal(outcome.extraction_status, "validated");
   assert.ok(outcome.steps.some((l) => l.includes("自动穿透 1 行")));
+});
+
+test("runReadList:stale 点击被拒→重新快照同序重试成功(2026-09-30)", async () => {
+  const s = new Scenario();
+  const row = { name: "销售经理", role: "link", actions: ["click"] };
+  s.nav()
+    .nav() // about:blank 清场
+    .snap([row]) // 列表快照
+    .clickRefused("browser_ref_stale") // 第 1 次点击被拒(stale)
+    .snap([row]) // resolveRefs 重新快照
+    .click() // 重试点击成功
+    .snap([{ name: "销售经理" }], "https://lpt.liepin.com/job/detail/preview?ejob_id=J9")
+    .nav(); // 回列表
+
+  const outcome = await runReadList(makeCtx(s), {
+    pageUrl: "https://lpt.liepin.com/job/manager",
+    captureRefs: [],
+    idParam: "ejob_id",
+    dryRun: false,
+    label: "职位列表页",
+    recordsExtractor: (snap) => extractJobRecords(snap),
+    autoCaptureRows: true,
+  });
+
+  const records = outcome.records as Array<Record<string, unknown>>;
+  assert.equal(records[0].jobId, "J9", "stale 重试后应成功取到 ID");
+  assert.ok(outcome.steps.some((l) => l.includes("自动穿透 1 行,解析到 ID 1 个")));
 });
 
 test("runReadSearch:key参数预填→点'搜索'提交→结果 records(2026-09-30 真机校准)", async () => {

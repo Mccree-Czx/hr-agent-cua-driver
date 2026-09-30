@@ -267,13 +267,22 @@ export interface ChatSessionRecord {
 /** 会话行时间锚(真机观察多种格式:HH:MM / 昨天 / 前天 / N天前 / MM-DD) */
 const CHAT_TIME_RE = /^(\d{1,2}:\d{2}|昨天|前天|\d+天前|\d{1,2}-\d{1,2})$/;
 
-/** 从 refs[from] 向前收集最多 max 个非空名称(span 限制搜索深度) */
+/** 会话行噪声词(非会话名:通知卡/筛选项等) */
+const CHAT_NAME_NOISE = /^(新收|新招呼|未读|全部|批量处理|收到简历)$/;
+
+/** 从 refs[from] 向前收集最多 max 个非空名称(span 限制搜索深度);
+ * 2026-09-30 真机校准:跳过超长文本(消息体,>30)、时间样式文本与噪声词,避免"幻影会话名";
+ */
 function backNames(refs: SnapshotRef[], from: number, max: number, span: number): string[] {
   const out: string[] = [];
   for (let i = from; i >= Math.max(0, from - span) && out.length < max; i--) {
     const n = refs[i].name;
     if (n !== null && n.trim() !== "") {
-      out.push(n.trim());
+      const t = n.trim();
+      if (t.length > 30 || CHAT_TIME_RE.test(t) || CHAT_NAME_NOISE.test(t)) {
+        continue;
+      }
+      out.push(t);
     }
   }
   return out;
@@ -288,6 +297,7 @@ function backNames(refs: SnapshotRef[], from: number, max: number, span: number)
 export function extractChatSessions(snap: SnapshotResult): ChatSessionRecord[] {
   const refs = snap.refs;
   const out: ChatSessionRecord[] = [];
+  const seen = new Set<string>();
   refs.forEach((r, i) => {
     if (r.name === null || !CHAT_TIME_RE.test(r.name.trim())) {
       return;
@@ -296,6 +306,10 @@ export function extractChatSessions(snap: SnapshotResult): ChatSessionRecord[] {
     if (back.length < 2) {
       return;
     }
+    if (seen.has(back[1])) {
+      return; // 同一会话名已存在(如消息体内嵌时间文本导致的重复锚)
+    }
+    seen.add(back[1]);
     let unread = false;
     let lastMsg: string | null = null;
     for (let j = i + 1; j < Math.min(refs.length, i + 8); j++) {

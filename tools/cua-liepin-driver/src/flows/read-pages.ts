@@ -92,9 +92,20 @@ export async function readPage(
   );
 }
 
+/** 点击穿透的可选策略 */
+export interface ClickThroughOptions {
+  /**
+   * 点击被拒(stale/superseded)时重新快照并解析同序 refs 用于重试
+   * (2026-09-30 真机:include_screenshot 下首次 click 常报 snapshot superseded,
+   * 重新快照后同序 ref 即可点击成功)。
+   */
+  resolveRefs?: () => Promise<string[]>;
+}
+
 /**
  * 点击穿透取 ID:对给定 ref 逐个点击 → 快照读 URL → 解析 id 参数 → 返回列表页。
  * 成本约 6-10s/ref(见契约 §4);dryRun 时仅报告 ref,不点击。
+ * stale/superseded 时经 options.resolveRefs 重新解析同序 ref 并重试(至多 2 次)。
  */
 export async function captureIdsByClickThrough(
   ctx: UiContext,
@@ -102,16 +113,37 @@ export async function captureIdsByClickThrough(
   backUrl: string,
   idParam: string,
   dryRun: boolean,
+  options: ClickThroughOptions = {},
 ): Promise<Capture[]> {
   const captures: Capture[] = [];
-  for (const ref of refs) {
+  for (let index = 0; index < refs.length; index++) {
+    let ref = refs[index];
     if (dryRun) {
       captures.push({ ref, url: "", id: null });
       ctx.log(`[穿透] dry-run:跳过点击 ${ref}`);
       continue;
     }
-    ctx.log(`[穿透] 点击 ${ref}`);
-    await clickRef(ctx.client, ctx.session, ref);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        ctx.log(`[穿透] 点击 ${ref}${attempt > 0 ? `(stale 重试 ${attempt})` : ""}`);
+        await clickRef(ctx.client, ctx.session, ref);
+        break;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // 2026-09-30:含 driver 底层"Frame with the given frameId is not found"(轮换后首次快照偶发)
+        const stale = /stale|superseded|frameId is not found/i.test(msg);
+        if (!stale || attempt >= 2 || options.resolveRefs === undefined) {
+          throw err;
+        }
+        // 重新快照 → 同序 ref 重定位
+        const fresh = await options.resolveRefs();
+        const next = fresh[index];
+        if (next === undefined) {
+          throw err;
+        }
+        ref = next;
+      }
+    }
     await ctx.sleep(1_500);
     const snap = await takeSnapshot(ctx);
     const url = snap.page.url;
@@ -195,7 +227,10 @@ export async function runReadList(ctx: UiContext, input: ReadListInput): Promise
       input.autoCaptureRowRefs ??
       ((s: SnapshotResult) => jobRowIndexes(s.refs).map((i) => s.refs[i].ref));
     const rowRefs = locate(snap).slice(0, AUTO_CAPTURE_LIMIT);
-    const autoCaptures = await captureIdsByClickThrough(ctx, rowRefs, input.pageUrl, input.idParam, input.dryRun);
+    const autoCaptures = await captureIdsByClickThrough(ctx, rowRefs, input.pageUrl, input.idParam, input.dryRun, {
+      // stale/superseded 重试:重新快照并按同序解析行 ref
+      resolveRefs: async () => locate(await takeSnapshot(ctx)).slice(0, AUTO_CAPTURE_LIMIT),
+    });
     const rows = records as Array<Record<string, unknown>>;
     const field = input.autoCaptureField ?? "jobId";
     autoCaptures.forEach((c, i) => {
