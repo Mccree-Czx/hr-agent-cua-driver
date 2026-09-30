@@ -468,8 +468,11 @@ export interface CandidateRecord {
   resume_id?: string | null;
 }
 
-/** 候选人姓名特征(隐私化展示:姓+女士/先生) */
-export const CANDIDATE_NAME_RE = /^[\u4e00-\u9fa5]{1,3}(女士|先生)$/;
+/** 候选人姓名特征:
+ * - 隐私名推荐页:姓+女士/先生(如"温女士");
+ * - 搜索页遮罩名:1-2 汉字+星号(如"乐**",2026-09-30 真机校准)。
+ */
+export const CANDIDATE_NAME_RE = /^([\u4e00-\u9fa5]{1,3}(女士|先生)|[\u4e00-\u9fa5]{1,2}\*{1,2})$/;
 
 /** 候选人姓名节点索引(供 autoCapture 逐卡穿透定位) */
 export function candidateRowIndexes(refs: SnapshotRef[]): number[] {

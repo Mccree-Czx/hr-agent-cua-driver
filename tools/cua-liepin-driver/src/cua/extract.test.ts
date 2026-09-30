@@ -276,6 +276,22 @@ test("extractCandidateRecords:多卡片边界与缺字段置 null", () => {
   assert.equal(records[1].expect_salary, null);
 });
 
+test("extractCandidateRecords:搜索页遮罩名(乐**)识别(2026-09-30 真机)", () => {
+  const snap = snapRefs([
+    { name: "乐**" },
+    { name: "42 Years" },
+    { name: "Master" },
+    { name: "Shanghai" },
+    { name: "期望：" },
+    { name: "Vietnam" },
+    { name: "Business Manager/Supervisor" },
+    { name: "35-50K·13薪" },
+  ]);
+  const records = extractCandidateRecords(snap);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].name, "乐**", "搜索页遮罩姓名应被识别");
+});
+
 test("extractCandidateRecords:无姓名节点时返回空数组", () => {
   const snap = snapRefs([{ name: "人才推荐" }, { name: "27岁" }]);
   assert.deepEqual(extractCandidateRecords(snap), []);
