@@ -241,6 +241,16 @@ UI 输出形状:
   (例:尹**: 36岁/14年/硕士/常州/常州/海外销售/30-40K·16薪);
   第 1 张卡(英文简历:42 Years/15 Service Years/Master/Shanghai)待双语字段匹配, 卡片起点偏差待续。
 
+### 双语字段与 chatmsg 复验(2026-09-30 晚)
+- **英文简历双语适配(已完成)**:age(42 Years)/experience(15 Service Years)/
+  education(Master/Bachelor/College)/location & expect_city(英文城市名)/expect_position(英文职位名);
+  图标噪声过滤(ICON_NOISE_RE:file-text/avatar/down 等不得入字段);
+  真机验证:搜索页英文卡全字段正确(location=Shanghai);
+- **chatmsg --name 已跑通**:与 attach 同款清场重试+标签轮换;真机 EXIT=0,
+  邵女士会话 121 行(消息流/附件迹象/工具栏均在);
+- **direction/oppositeRead 判定(待续)**:消息流纯文本行未直接暴露"我方/对方"标记;
+  待深挖:消息节点结构差异、"已读"标记位置、回声判定。
+
 ### 快照完整性终极修复(2026-09-30 突破)
 - **`include_screenshot:true` 强制 tab 视口捕获,实测显著提升语义树完整度**:
   无此项时同页反复清场+导航+快照 12 轮均只得残缺"导航壳"(122 refs/34 named);
