@@ -317,6 +317,43 @@ test("runReadList:stale 点击被拒→重新快照同序重试成功(2026-09-30
   assert.ok(outcome.steps.some((l) => l.includes("自动穿透 1 行,解析到 ID 1 个")));
 });
 
+test("runReadList:多卡穿透每卡独立会话(第2卡重建标签+重解析)", async () => {
+  const s = new Scenario();
+  const row1 = { name: "销售经理A", role: "link", actions: ["click"] };
+  const row2 = { name: "销售经理B", role: "link", actions: ["click"] };
+  s.nav().nav().snap([row1, row2])
+    .click().snap([{ name: "销售经理A" }], "https://lpt.liepin.com/job/detail/preview?ejob_id=J1")
+    .nav().nav() // 卡1:清场+回列表
+    .nav() // 卡2:重建后重导航
+    .snap([row1, row2]) // 卡2:重解析 refs
+    .click().snap([{ name: "销售经理B" }], "https://lpt.liepin.com/job/detail/preview?ejob_id=J2")
+    .nav().nav(); // 卡2:清场+回列表
+
+  let rotated = 0;
+  const ctx = {
+    ...makeCtx(s),
+    rotateSession: async () => {
+      rotated += 1;
+      return true;
+    },
+  };
+  const outcome = await runReadList(ctx, {
+    pageUrl: "https://lpt.liepin.com/job/manager",
+    captureRefs: [],
+    idParam: "ejob_id",
+    dryRun: false,
+    label: "职位列表页",
+    recordsExtractor: (snap) => extractJobRecords(snap),
+    autoCaptureRows: true,
+  });
+
+  const records = outcome.records as Array<Record<string, unknown>>;
+  assert.equal(records.length, 2);
+  assert.equal(records[0].jobId, "J1");
+  assert.equal(records[1].jobId, "J2", "第 2 卡应经重建+重解析后成功");
+  assert.equal(rotated, 1, "第 2 张卡应触发一次标签重建");
+});
+
 test("runReadSearch:key参数预填→点'搜索'提交→结果 records(2026-09-30 真机校准)", async () => {
   const s = new Scenario();
   const card = [

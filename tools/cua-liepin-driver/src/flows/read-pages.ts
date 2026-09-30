@@ -123,6 +123,22 @@ export async function captureIdsByClickThrough(
       ctx.log(`[穿透] dry-run:跳过点击 ${ref}`);
       continue;
     }
+    // 每卡独立会话(2026-09-30 真机):预览层(#preview)为独立 frame,连续穿透会累积
+    // driver 状态异常(第二张起 Frame not found)→ 第 2 张起先重建标签+重导航+重解析
+    if (index > 0) {
+      if (ctx.rotateSession !== undefined) {
+        await ctx.rotateSession();
+      }
+      await navigate(ctx, backUrl, 3_500);
+      await ctx.sleep(1_200); // 额外静置:SPA 重挂后 ref 才稳定
+      if (options.resolveRefs !== undefined) {
+        const fresh = await options.resolveRefs();
+        const next = fresh[index];
+        if (next !== undefined) {
+          ref = next;
+        }
+      }
+    }
     for (let attempt = 0; ; attempt++) {
       try {
         ctx.log(`[穿透] 点击 ${ref}${attempt > 0 ? `(stale 重试 ${attempt})` : ""}`);
