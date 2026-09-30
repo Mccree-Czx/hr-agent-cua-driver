@@ -338,6 +338,26 @@ test("readPage 语义残缺重试:首次壳(3行)→清场重导航后完整(30�
   ]);
 });
 
+test("readPage 残缺时调用 rotateSession(第 2 轮起轮换标签)", async () => {
+  const s = new Scenario();
+  const shell = [{ name: "壳" }];
+  const full = Array.from({ length: 30 }, (_, i) => ({ name: `内容${i}` }));
+  s.nav().nav().snap(shell).nav().nav().snap(full);
+
+  let rotated = 0;
+  const ctx = {
+    ...makeCtx(s),
+    minPageLines: 26,
+    rotateSession: async () => {
+      rotated += 1;
+      return true;
+    },
+  };
+  const { lines } = await readPage(ctx, "https://lpt.liepin.com/chat/im");
+  assert.equal(lines.length, 30);
+  assert.equal(rotated, 1, "第 2 轮应触发一次标签轮换");
+});
+
 test("readPage 持续残缺:清场重试 6 次后抛明确错误(不交付残缺数据)", async () => {
   const s = new Scenario();
   const shell = [{ name: "壳" }];

@@ -21,6 +21,8 @@ export interface UiContext {
   now?: () => number;
   /** readPage 内容充分性阈值覆盖(测试用 0 关闭校验;缺省 MIN_PAGE_LINES) */
   minPageLines?: number;
+  /** 会话标签轮换(旧标签连续残缺时;成功则 ctx.session 已更新/重新附加) */
+  rotateSession?: () => Promise<boolean>;
 }
 
 /** 元素匹配器:names 按序优先(包含匹配);roles/actions 为限定;excludeNames 排除 */

@@ -40,7 +40,24 @@ export async function withContext(
     await assertDesktopUnlocked(client);
     const session = await attachBrowserSession(client, cfg);
     log(`已附加窗口 pid=${session.window.pid} window=${session.window.windowId}`);
-    const ctx: UiContext = { client, session, dryRun: args.flags["dry-run"] === true, log, sleep };
+    const ctx: UiContext = {
+      client,
+      session,
+      dryRun: args.flags["dry-run"] === true,
+      log,
+      sleep,
+      // 会话标签轮换(2026-09-30):旧标签会持续返回残缺快照,换新标签并重新附加
+      rotateSession: async () => {
+        const label = await client.rotateSession();
+        if (label === null) {
+          return false;
+        }
+        const fresh = await attachBrowserSession(client, cfg);
+        ctx.session = fresh;
+        log(`会话标签已轮换 → ${label}(重新附加窗口 pid=${fresh.window.pid})`);
+        return true;
+      },
+    };
     await run(ctx);
     return 0;
   } catch (err) {

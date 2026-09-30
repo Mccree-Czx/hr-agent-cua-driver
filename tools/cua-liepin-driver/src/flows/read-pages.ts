@@ -77,6 +77,10 @@ export async function readPage(
     }
     last = lines.length;
     ctx.log(`文本行仅 ${lines.length}(疑似语义快照残缺),清场重试 ${attempt}/${PAGE_RETRY_ATTEMPTS}`);
+    // 2026-09-30 真机:长期复用的旧标签会持续残缺(新标签立即完整)→ 每轮失败后轮换标签
+    if (ctx.rotateSession !== undefined) {
+      await ctx.rotateSession();
+    }
     if (attempt < PAGE_RETRY_ATTEMPTS) {
       await ctx.sleep(1_800);
     }

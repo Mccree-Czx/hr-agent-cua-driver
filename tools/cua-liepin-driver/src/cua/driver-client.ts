@@ -147,6 +147,23 @@ export class DriverClient {
   }
 
   /**
+   * 会话标签轮换(2026-09-30 真机:长期复用的旧标签会持续返回残缺语义快照,
+   * 派生全新标签后立即恢复完整——同代码下 hr-agent2 4/4 残缺、新标签 4/4 完整)。
+   * 成功返回新标签名并切换 activeSession;失败返回 null。
+   */
+  async rotateSession(): Promise<string | null> {
+    const suffix = Date.now().toString(36);
+    for (let i = 1; i <= 3; i++) {
+      const candidate = `${this.opts.session}-r${i}-${suffix}`;
+      if (await this.ensureSession(candidate)) {
+        this.activeSession = candidate;
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  /**
    * 会话修复(2026-09-29 真机:标签会闲置死亡且 start_session 可能返回
    * session_unavailable):先尝试复活当前标签,再逐档派生 base-1..base-N;
    * 成功返回 true 并切换 activeSession。
