@@ -22,6 +22,8 @@
 - **cua-driver**(UI 通道,Windows):`powershell -File deploy/install-cua-driver.ps1`;
   daemon 启动方式见脚本输出(推荐 `serve --dangerously-bypass-approvals`——附件原生下载所需
   的 UIA 工具与 origin 受限清单互斥,driver 会拒绝启动带 origins 的清单)
+- **上线部署与观察期手册**:见 [deploy/cua-deploy-guide.md](deploy/cua-deploy-guide.md)
+  (前置检查/部署/冒烟自检/观察期指标/回滚/FAQ)
 - Docker(可选,MinIO 部署)
 
 ## 快速开始(开发)
