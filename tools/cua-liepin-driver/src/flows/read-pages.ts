@@ -39,6 +39,8 @@ export interface RawPageOutcome {
   /** 结构化记录(UI 抽取契约;按命令提供,缺省不输出) */
   records?: unknown[];
   attachment_hint?: boolean;
+  /** 会话级"对方已读我方最新消息"信号(chatmsg;2026-09-30 真机:消息流含独立"已读"行) */
+  opposite_read?: boolean;
   steps: string[];
 }
 
@@ -462,6 +464,12 @@ export async function runReadChatMsg(ctx: UiContext, input: ChatMsgInput): Promi
   if (attachment) {
     steps.push("检测到附件卡片文案迹象(简历/附件)");
   }
+  // 2026-09-30 真机对齐 ChatPollService.oppositeRead:消息流出现独立"已读"行
+  // (我方消息尾部标记)即视为"对方已读我方最新消息"
+  const oppositeRead = lines.some((l) => l.trim() === "已读");
+  if (oppositeRead) {
+    steps.push("检测到\"已读\"标记(对方已读我方最新消息)");
+  }
   return {
     page_url: input.pageUrl,
     count: lines.length,
@@ -469,6 +477,7 @@ export async function runReadChatMsg(ctx: UiContext, input: ChatMsgInput): Promi
     extraction_status: "unvalidated",
     captures: [],
     attachment_hint: attachment,
+    opposite_read: oppositeRead,
     steps,
   };
 }

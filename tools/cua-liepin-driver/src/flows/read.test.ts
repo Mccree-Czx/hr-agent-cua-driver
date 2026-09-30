@@ -220,11 +220,17 @@ test("runReadChatMsg --name 模式:点开命名会话并抽取消息(会话名�
     .nav() // about:blank 清场
     .snap([row, { name: "你好~我这里有个职位很适合你", role: "statictext" }]) // 会话列表(命中)
     .click() // 点开会话
-    .snap([row, { name: "邵女士的简历.pdf", role: "statictext" }]); // 消息区(含附件卡)
+    .snap([
+      row,
+      { name: "你好~我这里有个职位很适合你", role: "statictext" },
+      { name: "已读", role: "statictext" },
+      { name: "邵女士的简历.pdf", role: "statictext" },
+    ]); // 消息区(含已读标记与附件卡)
 
   const outcome = await runReadChatMsg(makeCtx(s), { pageUrl: url, name: "邵女士", dryRun: false });
 
   assert.equal(outcome.attachment_hint, true);
+  assert.equal(outcome.opposite_read, true, "含\"已读\"行应置 opposite_read");
   assert.ok(outcome.steps.some((l) => l.includes("会话行")));
   assert.deepEqual(s.tools(), [
     "browser_navigate",
