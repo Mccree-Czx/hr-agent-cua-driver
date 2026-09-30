@@ -205,6 +205,23 @@ test("extractJobRecords:待发布行缺字段时置 null(不伪造)", () => {
   assert.deepEqual(records, [{ title: "销售经理", city: null, salary: null, refreshed_at: null, status: null }]);
 });
 
+test("extractJobRecords:字段距职位行较远仍归属(真机 78 节点,2026-09-30 修复)", () => {
+  const pad = Array.from({ length: 70 }, (_, i) => ({ name: `填充${i}` }));
+  const snap = snapRefs([
+    { name: "海外ToB渠道销售（出海品牌）", role: "link", actions: ["click"] },
+    ...pad,
+    { name: "上海-黄浦区" },
+    { name: "15-30k" },
+    { name: "2026.09.29刷新" },
+    { name: "沟通中" },
+  ]);
+  const records = extractJobRecords(snap);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].city, "上海-黄浦区", ">60 节点的字段也应归属(原上限导致全 null)");
+  assert.equal(records[0].salary, "15-30k");
+  assert.equal(records[0].status, "沟通中");
+});
+
 test("extractCandidateRecords:真机样本结构(温女士卡片序列)", () => {
   const snap = snapRefs([
     { name: "温女士" },

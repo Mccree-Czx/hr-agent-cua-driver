@@ -398,7 +398,8 @@ export function jobRowIndexes(refs: SnapshotRef[]): number[] {
  * 抽取职位记录列表。
  * 真机样本(2026-09-29)单行结构:职位名(link) … 地点("上海-黄浦区") →
  * 薪资("15-30k") → 刷新时间("2026.09.29刷新") → 状态("沟通中");
- * 行边界 = 下一个职位行 link 索引(无则向后最多 60 节点);
+ * 行边界 = 下一个职位行 link 索引(无则向后最多 160 节点;
+ * 2026-09-30 真机校准:样本中字段距职位行达 78 节点,原 60 上限导致 city/salary 等全 null);
  * 字段在区间内各取首个匹配,缺失为 null(不伪造)。
  */
 export function extractJobRecords(snap: SnapshotResult): JobRecord[] {
@@ -407,7 +408,7 @@ export function extractJobRecords(snap: SnapshotResult): JobRecord[] {
   const records: JobRecord[] = [];
   for (let k = 0; k < idxs.length; k++) {
     const start = idxs[k];
-    const end = k + 1 < idxs.length ? idxs[k + 1] : Math.min(refs.length, start + 60);
+    const end = k + 1 < idxs.length ? idxs[k + 1] : Math.min(refs.length, start + 160);
     const record: JobRecord = {
       title: refs[start].name as string,
       city: null,
