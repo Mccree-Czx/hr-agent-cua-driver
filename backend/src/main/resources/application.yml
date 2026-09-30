@@ -79,7 +79,23 @@ hr-agent:
     script-path: ${CUA_SCRIPT_PATH:}
     # cua-driver 可执行文件(留空则从 PATH 查找)
     driver-bin: ${CUA_DRIVER_BIN:}
-    # 命令级路由:命令名 → ui|legacy(未配置=legacy;W2+ 逐波启用,示例:greet: ui)
+    # 命令级路由:命令名 → ui|legacy(未配置=legacy;run() 按 args[0] 统一判定)
+    # 全量切换模板(W6 收口;完成观察期准备后启用 enabled: true 并按序放开对应命令):
+    #   commands:
+    #     login: ui
+    #     joblist: ui
+    #     chatlist: ui
+    #     chatmsg: ui
+    #     resume: ui
+    #     recommend: ui
+    #     search: ui
+    #     greet: ui
+    #     request-resume: ui
+    #     send-message: ui
+    #     attach-fetch: ui
+    #     attach-download: ui
+    #     jobpublish: ui
+    #     jobdelete: ui
     commands: {}
   storage:
     type: ${STORAGE_TYPE:minio}
