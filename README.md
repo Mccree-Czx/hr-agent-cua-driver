@@ -7,10 +7,10 @@
 单机集中式:
 
 - **backend/**:Spring Boot 3 + Java 17 + MyBatis-Plus + MySQL,通过子进程驱动平台通道——
-  liepin-cli(Node.js CLI,浏览器自动化,过渡期)与 **tools/cua-liepin-driver**(CUA 全量替换;
-  经 cua-driver 以真实 UI 操作完成读写/外发/附件,命令级开关灰度、默认关闭)
+  **tools/cua-liepin-driver**(经 cua-driver 以真实 UI 操作完成读写/外发/附件;
+  **2026-09-30 全量替换定稿:liepin-cli 已彻底移除,本通道为唯一执行路径**)
 - **frontend/**:Vue3 + Element Plus 管理后台(岗位/账号/候选人台账/用户)
-- **deploy/**:部署脚本(liepin-cli/cua-driver 安装、能力清单、MinIO、登录态备份、前端构建)
+- **deploy/**:部署脚本(cua-driver 安装、MinIO、登录态备份、前端构建)
 - AI 层:AgentScope Java 框架,底层接国内模型 API(DeepSeek/Qwen/GLM)
 - 简历存储:MinIO 对象存储 + MySQL 元数据(StorageService 抽象,可切本地文件系统)
 - 告警:飞书自定义机器人 webhook(任务失败/账号熔断/登录态失效)
@@ -20,7 +20,8 @@
 - JDK 17+、Maven 3.9+、Node.js 20+ / npm、MySQL 8+、Chrome
 - **Chrome 必须为有头模式**(无头 UA 矛盾会被猎聘风控零误报识别,实测导致账号限制)
 - **cua-driver**(UI 通道,Windows):`powershell -File deploy/install-cua-driver.ps1`;
-  daemon 推荐启动方式见脚本输出(能力清单 `deploy/cua-capabilities.yaml` 将审批绕过收窄到猎聘工作面)
+  daemon 启动方式见脚本输出(推荐 `serve --dangerously-bypass-approvals`——附件原生下载所需
+  的 UIA 工具与 origin 受限清单互斥,driver 会拒绝启动带 origins 的清单)
 - Docker(可选,MinIO 部署)
 
 ## 快速开始(开发)
@@ -30,8 +31,8 @@
 mysql -uroot -p -e "CREATE DATABASE IF NOT EXISTS hr_agent DEFAULT CHARACTER SET utf8mb4;"
 mysql -uroot -p hr_agent < backend/src/main/resources/sql/schema.sql
 
-# 2. 安装 liepin-cli(fork 治理:建议 fork 后固定 commit 安装)
-sh deploy/install-liepin-cli.sh <fork仓库地址> <commit>
+# 2. 安装 cua-driver(UI 通道,Windows;见上方环境要求)
+powershell -ExecutionPolicy Bypass -File deploy/install-cua-driver.ps1
 
 # 3. 后端(首次启动自动创建 admin / admin123,请尽快修改)
 cd backend
@@ -84,7 +85,7 @@ java -jar target/hr-agent-backend-0.1.0-SNAPSHOT.jar
 - 每账号独立 `LIEPIN_USER_DATA_DIR`(默认 `~/.liepin-cli/profiles/account-<id>`)
 - 扫码登录:后台「账号管理」页点「扫码登录」,浏览器弹出窗口本机扫码
 - 备份/恢复:`sh deploy/backup-userdata.sh backup` / `restore <目录>`
-- 浏览器残留:多个实例锁定同一 user-data 时先 `liepin quit` 再操作
+- 浏览器残留:多个实例锁定同一 user-data 时先关闭残留 Chrome 窗口再操作
 
 ### 风控应对(评审 P0-3)
 
@@ -102,8 +103,8 @@ java -jar target/hr-agent-backend-0.1.0-SNAPSHOT.jar
 
 | 场景 | 预期行为 |
 |------|---------|
-| CLI 命令超时 | 任务退避重试(30s×2^n),3 次后终态失败并告警 |
-| CLI 非零退出 | 同上 |
+| 驱动命令超时 | 任务退避重试(30s×2^n),3 次后终态失败并告警 |
+| 驱动非零退出 | 同上 |
 | 风控页/验证码 | 账号自动熔断 + 飞书告警,任务终态 |
 | 登录态失效 | 账号标记需扫码 + 告警,任务挂起等待扫码 |
 | 进程崩溃 | 重启后调度器释放过期租约,任务自动恢复执行 |
@@ -112,7 +113,7 @@ java -jar target/hr-agent-backend-0.1.0-SNAPSHOT.jar
 ## 测试
 
 ```bash
-cd backend && mvn test   # H2 内存库,56 个用例覆盖 DAO/接口/权限/队列/评分/打招呼/简历收集
+cd backend && mvn test   # H2 内存库,298 个用例覆盖 DAO/接口/权限/队列/评分/打招呼/简历收集
 ```
 
 ## 阶段进度
@@ -122,6 +123,7 @@ cd backend && mvn test   # H2 内存库,56 个用例覆盖 DAO/接口/权限/队
 - [x] 阶段 3:AgentScope 评分 Agent + 打招呼(真实评分验证)
 - [x] 阶段 4:简历入库(MinIO)+ 台账 + 权限
 - [x] 阶段 5:集成验证与运维加固
+- [x] 阶段 6:CUA 驱动全量替换(liepin-cli 彻底移除;驱动测试 141、后端 298 全绿)
 
 ## 合规提示
 

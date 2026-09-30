@@ -49,9 +49,14 @@ export interface WaitFileOptions {
   now: () => number;
 }
 
+/** Chrome 下载临时文件后缀(下载中/未确认扫描状态;须等最终重命名后再交付;
+ * 2026-09-30 真机:新会话首次下载出现 "未确认 <id>.crdownload") */
+export const CRDOWNLOAD_SUFFIX = ".crdownload";
+
 /**
  * 等待目录中出现(相对 before 的)新文件;返回新文件的绝对路径。
  * 多文件同时出现时取 mtime 最新者;超时返回 null。
+ * 2026-09-30:排除 Chrome 下载中的 *.crdownload 临时文件(等最终重命名后的正式文件)。
  */
 export async function waitForNewFile(
   dir: string,
@@ -65,7 +70,10 @@ export async function waitForNewFile(
 
   for (;;) {
     const fresh = listDir(dir)
-      .filter((f) => !known.has(f.name) && f.size > 0)
+      .filter(
+        (f) =>
+          !known.has(f.name) && f.size > 0 && !f.name.toLowerCase().endsWith(CRDOWNLOAD_SUFFIX),
+      )
       .sort((a, b) => b.mtimeMs - a.mtimeMs);
     if (fresh.length > 0) {
       return join(dir, fresh[0].name);

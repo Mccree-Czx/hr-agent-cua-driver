@@ -5,10 +5,10 @@ import com.hragent.entity.LiepinAccount;
 import java.util.List;
 
 /**
- * 子进程输出风控/登录态检测(评审 P0-3;2026-09-28 双档治理;2026-09-29 W1 抽出共享)。
+ * 子进程输出风控/登录态检测(评审 P0-3;2026-09-28 双档治理;2026-09-29 W1 抽出共享;
+ * 2026-09-30 全量替换后仅 CuaDriverExecutor 使用)。
  *
- * <p>两条通道(LiepinCliExecutor 的 CDP 通道、CuaDriverExecutor 的 UI 通道)
- * 共用同一检测语义,避免各写一份漂移:
+ * <p>统一检测语义,避免各写一份漂移:
  * <ul>
  *     <li><b>结构性标记</b>({@code captchaPage}/{@code safe.liepin.com})全路径扫描
  *         —— 不会出现在正常业务数据里(候选人简历等);</li>
@@ -60,7 +60,7 @@ public final class CliRiskDetector {
         }
         if (result.timedOut()) {
             throw new CliException(CliException.Type.TIMEOUT,
-                    "liepin-cli 执行超时(account=" + account.getId() + ")");
+                    "驱动执行超时(account=" + account.getId() + ")");
         }
         // 退出码契约(0/1/2/3):2=登录态失效、3=风控,其余非零=一般失败
         if (result.exitCode() == 3) {

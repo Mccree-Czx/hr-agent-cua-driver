@@ -6,9 +6,7 @@ import com.hragent.executor.AccountLocks;
 import com.hragent.executor.CliException;
 import com.hragent.executor.CliResult;
 import com.hragent.executor.CliSpawnCounter;
-import com.hragent.executor.CuaCommandResolver;
 import com.hragent.executor.CuaDriverExecutor;
-import com.hragent.executor.LiepinCliExecutor;
 import com.hragent.notify.NotifyService;
 import com.hragent.repository.LiepinAccountMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,7 +39,7 @@ class LiepinCommandServiceRiskTest {
 
     private HrAgentProperties properties;
     private RiskSuspectGuard guard;
-    private LiepinCliExecutor executor;
+    private CuaDriverExecutor executor;
     private LiepinAccountMapper accounts;
     private NotifyService notify;
     private LiepinCommandService service;
@@ -52,12 +50,10 @@ class LiepinCommandServiceRiskTest {
         properties = new HrAgentProperties();
         properties.getAutoRecruit().setRiskProbeBackoffMinutes(15);
         guard = new RiskSuspectGuard(properties);
-        executor = spy(new LiepinCliExecutor(properties, new AccountLocks(), new CliSpawnCounter()));
+        executor = spy(new CuaDriverExecutor(new AccountLocks(), new CliSpawnCounter(), properties));
         accounts = mock(LiepinAccountMapper.class);
         notify = mock(NotifyService.class);
-        service = new LiepinCommandService(executor, accounts, notify, guard,
-                new CuaDriverExecutor(new AccountLocks(), new CliSpawnCounter(), properties),
-                new CuaCommandResolver(properties));
+        service = new LiepinCommandService(executor, accounts, notify, guard);
 
         account = new LiepinAccount();
         account.setId(1L);

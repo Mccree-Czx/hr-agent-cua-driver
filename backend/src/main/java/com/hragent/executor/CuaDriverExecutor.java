@@ -17,14 +17,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * cua-liepin-driver 子进程封装(UI 驱动通道,2026-09-29 全量替换 W1)。
+ * cua-liepin-driver 子进程封装(唯一平台通道,2026-09-29 W1;2026-09-30 全量替换定稿)。
  *
- * <p>与 {@link LiepinCliExecutor}(CDP 通道)对齐的关键设计:
+ * <p>关键设计:
  * <ul>
- *     <li><b>共享账号锁</b>:经 {@link AccountLocks} 与 CDP 通道共用同一把账号锁
- *         —— UI 与 CDP 两条自动化绝不能在同一 Chrome/profile 上并发互踩;</li>
- *     <li><b>共享平台足迹计数</b>:{@link CliSpawnCounter},命令逐波迁移到 UI 通道后
- *         轮次节拍判定自动生效,无需改动 AutoRecruitScheduler;</li>
+ *     <li><b>账号锁</b>:经 {@link AccountLocks} 保证同账号并发调用串行
+ *         —— 同一 Chrome/profile 上的自动化绝不能互踩;</li>
+ *     <li><b>平台足迹计数</b>:{@link CliSpawnCounter},轮次节拍判定依据
+ *         (AutoRecruitScheduler 按计数增量识别"触达平台"的动作);</li>
  *     <li>输出落临时文件(防大输出管道死锁)、统一超时;风控检测复用
  *         {@link CliRiskDetector}(含退出码 0/1/2/3 显式映射);</li>
  *     <li>每账号注入 env:{@code LIEPIN_USER_DATA_DIR}(profile 隔离)与

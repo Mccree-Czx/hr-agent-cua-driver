@@ -1,13 +1,12 @@
 package com.hragent.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.hragent.common.BizException;
 import com.hragent.config.HrAgentProperties;
 import com.hragent.entity.LiepinAccount;
 import com.hragent.executor.CliException;
 import com.hragent.executor.CliResult;
-import com.hragent.executor.CuaCommandResolver;
 import com.hragent.executor.CuaDriverExecutor;
-import com.hragent.executor.LiepinCliExecutor;
 import com.hragent.notify.NotifyService;
 import com.hragent.repository.LiepinAccountMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
@@ -22,23 +22,22 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 命令级路由测试(2026-09-29 W2):hr-agent.cua.commands.<命令>=ui 时该命令走 UI 通道,
- * 其余(默认)走 legacy CDP 通道;两条通道的风控检测与冻结-复测接线一致。
+ * LiepinCommandService 单通道契约测试(2026-09-30 全量替换定稿):
+ * 全部命令直走 CUA UI 通道(liepin-cli/legacy 已彻底移除);
+ * 覆盖参数拼装、records 解析、风控接线与 attach 键分支。
  */
 class LiepinCommandServiceRoutingTest {
 
-    private HrAgentProperties properties;
-    private LiepinCliExecutor legacy;
     private CuaDriverExecutor cua;
     private LiepinAccountMapper accounts;
     private LiepinCommandService service;
@@ -46,12 +45,11 @@ class LiepinCommandServiceRoutingTest {
 
     @BeforeEach
     void setUp() {
-        properties = new HrAgentProperties();
-        legacy = mock(LiepinCliExecutor.class);
+        HrAgentProperties properties = new HrAgentProperties();
         cua = mock(CuaDriverExecutor.class);
         accounts = mock(LiepinAccountMapper.class);
-        service = new LiepinCommandService(legacy, accounts, mock(NotifyService.class),
-                new RiskSuspectGuard(properties), cua, new CuaCommandResolver(properties));
+        service = new LiepinCommandService(cua, accounts, mock(NotifyService.class),
+                new RiskSuspectGuard(properties));
 
         account = new LiepinAccount();
         account.setId(1L);
@@ -59,196 +57,119 @@ class LiepinCommandServiceRoutingTest {
         account.setCircuitBreaker(false);
     }
 
-    /** 让某命令路由到 UI 通道 */
-    private void enableUi(String command) {
-        properties.getCua().setEnabled(true);
-        properties.getCua().getCommands().put(command, "ui");
-        service = new LiepinCommandService(legacy, accounts, mock(NotifyService.class),
-                new RiskSuspectGuard(properties), cua, new CuaCommandResolver(properties));
+    private void stubOk(String stdout) {
+        try {
+            when(cua.execute(any(), any(), any(String[].class)))
+                    .thenReturn(new CliResult(0, stdout, "", false));
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 
-    @Test
-    void defaultRoutesGreetToLegacy() throws Exception {
-        when(legacy.execute(any(), any(), any(String[].class)))
-                .thenReturn(new CliResult(0, "{\"success\":true}", "", false));
-
-        service.greet(account, "r1", "42", "", Duration.ofMinutes(1));
-
+    private String[] captureArgs() throws Exception {
         ArgumentCaptor<String[]> captor = ArgumentCaptor.forClass(String[].class);
-        verify(legacy, times(1)).execute(eq(account), any(), captor.capture());
-        assertEquals("greet", captor.getValue()[0]);
-        verify(cua, never()).execute(any(), any(), any(String[].class));
+        verify(cua, times(1)).execute(eq(account), any(), captor.capture());
+        return captor.getValue();
     }
 
     @Test
-    void uiConfiguredRoutesGreetToCua() throws Exception {
-        enableUi("greet");
-        when(cua.execute(any(), any(), any(String[].class)))
-                .thenReturn(new CliResult(0, "{\"success\":true}", "", false));
-
+    void greetRunsOnUiChannelWithRiskCheck() throws Exception {
+        stubOk("{\"success\":true}");
         service.greet(account, "r1", "42", "你好", Duration.ofMinutes(1));
-
-        ArgumentCaptor<String[]> captor = ArgumentCaptor.forClass(String[].class);
-        verify(cua, times(1)).execute(eq(account), any(), captor.capture());
-        assertEquals("greet", captor.getValue()[0]);
+        String[] argv = captureArgs();
+        assertEquals("greet", argv[0]);
         verify(cua, times(1)).checkRisk(eq(account), any());
-        verify(legacy, never()).execute(any(), any(), any(String[].class));
-        verify(legacy, never()).checkRisk(any(), any());
     }
 
     @Test
-    void uiConfiguredRoutesRequestResumeToCua() throws Exception {
-        enableUi("request-resume");
-        when(cua.execute(any(), any(), any(String[].class)))
-                .thenReturn(new CliResult(0, "{\"success\":true,\"confirmed\":true}", "", false));
-
+    void requestResumeRunsOnUiChannel() throws Exception {
+        stubOk("{\"success\":true,\"confirmed\":true}");
         service.requestResume(account, "r1", "im-9", Duration.ofMinutes(1));
-
-        ArgumentCaptor<String[]> captor = ArgumentCaptor.forClass(String[].class);
-        verify(cua, times(1)).execute(eq(account), any(), captor.capture());
-        assertEquals("request-resume", captor.getValue()[0]);
-        verify(legacy, never()).execute(any(), any(), any(String[].class));
+        assertEquals("request-resume", captureArgs()[0]);
     }
 
     @Test
-    void otherCommandsStayLegacyWhenOnlyGreetIsUi() throws Exception {
-        enableUi("greet");
-        when(legacy.execute(any(), any(), any(String[].class)))
-                .thenReturn(new CliResult(0, "[]", "", false));
-
+    void chatlistRunsOnUiChannel() throws Exception {
+        stubOk("[]");
         service.chatlist(account, Duration.ofMinutes(1));
-
-        ArgumentCaptor<String[]> captor = ArgumentCaptor.forClass(String[].class);
-        verify(legacy, times(1)).execute(eq(account), any(), captor.capture());
-        assertEquals("chatlist", captor.getValue()[0]);
-        verify(cua, never()).execute(any(), any(), any(String[].class));
+        assertEquals("chatlist", captureArgs()[0]);
     }
 
     @Test
-    void uiChannelRiskControlSurfacesAndFreezesWithoutMarking() throws Exception {
-        enableUi("greet");
-        when(cua.execute(any(), any(), any(String[].class)))
-                .thenReturn(new CliResult(0, "{\"success\":true}", "", false));
-        doThrow(new CliException(CliException.Type.RISK_CONTROL, "UI 通道风控"))
+    void jobListReadsRecordsAndPassesWithIds() throws Exception {
+        stubOk("{\"extraction_status\":\"validated\",\"records\":[{\"title\":\"销售经理\","
+                + "\"city\":\"上海-黄浦区\",\"salary\":\"15-30k\",\"status\":\"沟通中\",\"jobId\":\"85915821\"}]}");
+        List<JsonNode> jobs = service.jobList(account, Duration.ofMinutes(1));
+        assertEquals(1, jobs.size());
+        assertEquals("85915821", jobs.get(0).path("jobId").asText());
+        String[] argv = captureArgs();
+        assertEquals("joblist", argv[0]);
+        assertTrue(Arrays.asList(argv).contains("--with-ids"), "必须带 --with-ids 保证 jobId 可得");
+    }
+
+    @Test
+    void recommendReadsRecordsWithResumeId() throws Exception {
+        stubOk("{\"extraction_status\":\"validated\",\"records\":[{\"name\":\"温女士\","
+                + "\"expect_position\":\"海外销售\",\"resume_id\":\"eb75dde295fdSc7f903cb4428\"}]}");
+        List<JsonNode> cands = service.recommend(account, "42", Duration.ofMinutes(1));
+        assertEquals(1, cands.size());
+        assertEquals("温女士", cands.get(0).path("name").asText());
+        assertEquals("eb75dde295fdSc7f903cb4428", cands.get(0).path("resume_id").asText());
+        String[] argv = captureArgs();
+        assertTrue(Arrays.asList(argv).contains("--with-ids"), "必须带 --with-ids 保证 resume_id 可得");
+    }
+
+    @Test
+    void searchReadsRecordsAndPassesWithIds() throws Exception {
+        stubOk("{\"extraction_status\":\"validated\",\"records\":[{\"name\":\"温女士\","
+                + "\"expect_position\":\"海外销售\",\"resume_id\":\"eb75dde295fdSc7f903cb4428\"}]}");
+        List<JsonNode> cands = service.search(account, "海外销售", 20, Duration.ofMinutes(1));
+        assertEquals(1, cands.size());
+        assertEquals("温女士", cands.get(0).path("name").asText());
+        String[] argv = captureArgs();
+        assertEquals("search", argv[0]);
+        List<String> list = Arrays.asList(argv);
+        assertTrue(list.contains("海外销售") && list.contains("--with-ids"),
+                "关键词位置参数 + --with-ids 保证 resume_id 可得");
+    }
+
+    @Test
+    void nonArrayRecordsRejectedForJobList() throws Exception {
+        stubOk("[]");
+        assertThrows(BizException.class, () -> service.jobList(account, Duration.ofMinutes(1)));
+    }
+
+    @Test
+    void riskControlSurfacesAndFreezesWithoutMarking() throws Exception {
+        stubOk("{\"success\":true}");
+        doThrow(new CliException(CliException.Type.RISK_CONTROL, "通道风控"))
                 .when(cua).checkRisk(any(), any());
 
         CliException e = assertThrows(CliException.class,
                 () -> service.greet(account, "r1", "42", "", Duration.ofMinutes(1)));
         assertEquals(CliException.Type.RISK_CONTROL, e.getType());
-        // 首次命中仅冻结(不标记账号、不告警)——与 legacy 通道语义一致
+        // 首次命中仅冻结(不标记账号、不告警)
         verify(accounts, never()).updateById(any(LiepinAccount.class));
-        verify(legacy, never()).checkRisk(any(), any());
     }
 
     @Test
-    void uiJobListReadsRecordsAndPassesWithIds() throws Exception {
-        enableUi("joblist");
-        when(cua.execute(any(), any(), any(String[].class)))
-                .thenReturn(new CliResult(0,
-                        "{\"extraction_status\":\"validated\",\"records\":[{\"title\":\"销售经理\",\"city\":\"上海-黄浦区\",\"salary\":\"15-30k\",\"status\":\"沟通中\",\"jobId\":\"85915821\"}]}",
-                        "", false));
+    void attachFetchPrefersImIdThenName() throws Exception {
+        stubOk("{\"found\":false,\"success\":false,\"reason\":\"no-attachment\"}");
+        service.attachFetch(account, "im-1", "温女士", "C:/tmp/out", Duration.ofMinutes(1));
+        List<String> list1 = Arrays.asList(captureArgs());
+        assertTrue(list1.contains("--imId") && list1.contains("im-1"), "有 im_id 时优先 --imId");
 
-        List<JsonNode> jobs = service.jobList(account, Duration.ofMinutes(1));
-
-        assertEquals(1, jobs.size());
-        assertEquals("85915821", jobs.get(0).path("jobId").asText());
-        assertEquals("销售经理", jobs.get(0).path("title").asText());
-        ArgumentCaptor<String[]> captor = ArgumentCaptor.forClass(String[].class);
-        verify(cua, times(1)).execute(eq(account), any(), captor.capture());
-        assertEquals("joblist", captor.getValue()[0]);
-        assertTrue(java.util.Arrays.asList(captor.getValue()).contains("--with-ids"),
-                "UI 通道必须带 --with-ids 保证 jobId 可得");
-        verify(legacy, never()).execute(any(), any(), any(String[].class));
-    }
-
-    @Test
-    void legacyJobListStaysArrayOutput() throws Exception {
-        when(legacy.execute(any(), any(), any(String[].class)))
-                .thenReturn(new CliResult(0, "[{\"jobId\":\"1\",\"title\":\"T\"}]", "", false));
-
-        List<JsonNode> jobs = service.jobList(account, Duration.ofMinutes(1));
-
-        assertEquals(1, jobs.size());
-        assertEquals("1", jobs.get(0).path("jobId").asText());
-        verify(cua, never()).execute(any(), any(), any(String[].class));
-    }
-
-    @Test
-    void uiRecommendReadsRecordsWithResumeId() throws Exception {
-        enableUi("recommend");
-        when(cua.execute(any(), any(), any(String[].class)))
-                .thenReturn(new CliResult(0,
-                        "{\"extraction_status\":\"validated\",\"records\":[{\"name\":\"温女士\",\"expect_position\":\"海外销售\",\"resume_id\":\"eb75dde295fdSc7f903cb4428\"}]}",
-                        "", false));
-
-        List<JsonNode> cands = service.recommend(account, "42", Duration.ofMinutes(1));
-
-        assertEquals(1, cands.size());
-        assertEquals("温女士", cands.get(0).path("name").asText());
-        assertEquals("eb75dde295fdSc7f903cb4428", cands.get(0).path("resume_id").asText());
-        ArgumentCaptor<String[]> captor = ArgumentCaptor.forClass(String[].class);
-        verify(cua, times(1)).execute(eq(account), any(), captor.capture());
-        assertTrue(java.util.Arrays.asList(captor.getValue()).contains("--with-ids"),
-                "UI 通道必须带 --with-ids 保证 resume_id 可得");
-        verify(legacy, never()).execute(any(), any(), any(String[].class));
-    }
-
-    @Test
-    void uiSearchReadsRecordsAndPassesWithIds() throws Exception {
-        enableUi("search");
-        when(cua.execute(any(), any(), any(String[].class)))
-                .thenReturn(new CliResult(0,
-                        "{\"extraction_status\":\"validated\",\"records\":[{\"name\":\"温女士\",\"expect_position\":\"海外销售\",\"resume_id\":\"eb75dde295fdSc7f903cb4428\"}]}",
-                        "", false));
-
-        List<JsonNode> cands = service.search(account, "海外销售", 20, Duration.ofMinutes(1));
-
-        assertEquals(1, cands.size());
-        assertEquals("温女士", cands.get(0).path("name").asText());
-        assertEquals("eb75dde295fdSc7f903cb4428", cands.get(0).path("resume_id").asText());
-        ArgumentCaptor<String[]> captor = ArgumentCaptor.forClass(String[].class);
-        verify(cua, times(1)).execute(eq(account), any(), captor.capture());
-        List<String> argv = java.util.Arrays.asList(captor.getValue());
-        assertEquals("search", captor.getValue()[0]);
-        assertTrue(argv.contains("海外销售") && argv.contains("--with-ids"),
-                "UI 通道: 关键词位置参数 + --with-ids 保证 resume_id 可得");
-        verify(legacy, never()).execute(any(), any(), any(String[].class));
-    }
-
-    @Test
-    void legacySearchStaysArrayOutput() throws Exception {
-        when(legacy.execute(any(), any(), any(String[].class)))
-                .thenReturn(new CliResult(0, "[{\"name\":\"张三\",\"resume_id\":\"r1\"}]", "", false));
-
-        List<JsonNode> cands = service.search(account, "销售", 20, Duration.ofMinutes(1));
-
-        assertEquals(1, cands.size());
-        assertEquals("张三", cands.get(0).path("name").asText());
-        verify(cua, never()).execute(any(), any(), any(String[].class));
-    }
-
-    @Test
-    void uiAttachFetchUsesNameWhenImIdMissing() throws Exception {
-        enableUi("attach-fetch");
-        when(cua.execute(any(), any(), any(String[].class)))
-                .thenReturn(new CliResult(0, "{\"found\":false,\"success\":false,\"reason\":\"no-attachment\"}", "", false));
-
+        reset(cua);
+        stubOk("{\"found\":false,\"success\":false,\"reason\":\"no-attachment\"}");
         service.attachFetch(account, "", "温女士", "C:/tmp/out", Duration.ofMinutes(1));
-
-        ArgumentCaptor<String[]> captor = ArgumentCaptor.forClass(String[].class);
-        verify(cua, times(1)).execute(eq(account), any(), captor.capture());
-        List<String> argv = java.util.Arrays.asList(captor.getValue());
-        assertTrue(argv.contains("--name") && argv.contains("温女士"),
-                "UI 通道无 im_id 时应按会话名定位(--name)");
-        verify(legacy, never()).execute(any(), any(), any(String[].class));
+        List<String> list2 = Arrays.asList(captureArgs());
+        assertTrue(list2.contains("--name") && list2.contains("温女士"), "无 im_id 时按会话名定位(--name)");
     }
 
     @Test
-    void legacyAttachFetchWithoutImIdReturnsEmptyWithoutCall() throws Exception {
-        Optional<JsonNode> r = service.attachFetch(account, "", "温女士", "C:/tmp/out", Duration.ofMinutes(1));
-
-        assertTrue(r.isEmpty(), "legacy 无 im_id 应空返回(守卫下沉)");
-        verify(legacy, never()).execute(any(), any(), any(String[].class));
+    void attachFetchWithoutAnyKeyReturnsEmptyWithoutCall() throws Exception {
+        Optional<JsonNode> r = service.attachFetch(account, "", "", "C:/tmp/out", Duration.ofMinutes(1));
+        assertTrue(r.isEmpty(), "无键应空返回(不猜测)");
         verify(cua, never()).execute(any(), any(), any(String[].class));
     }
 }

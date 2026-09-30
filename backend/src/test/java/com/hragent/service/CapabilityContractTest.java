@@ -3,12 +3,8 @@ package com.hragent.service;
 import com.hragent.common.BizException;
 import com.hragent.config.HrAgentProperties;
 import com.hragent.entity.*;
-import com.hragent.executor.AccountLocks;
 import com.hragent.executor.CliResult;
-import com.hragent.executor.CliSpawnCounter;
-import com.hragent.executor.CuaCommandResolver;
 import com.hragent.executor.CuaDriverExecutor;
-import com.hragent.executor.LiepinCliExecutor;
 import com.hragent.notify.NotifyService;
 import com.hragent.repository.*;
 import com.hragent.storage.StorageService;
@@ -22,9 +18,10 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-// 全部外部边界为 mock：不运行进程、不连接业务库、不发消息。
+// 全部外部边界为 mock:不运行进程、不连接业务库、不发消息。
+// 2026-09-30 全量替换:平台命令统一经 CuaDriverExecutor(UI 通道)。
 class CapabilityContractTest {
-    private final LiepinCliExecutor executor = mock(LiepinCliExecutor.class);
+    private final CuaDriverExecutor executor = mock(CuaDriverExecutor.class);
     private final LiepinAccountMapper accounts = mock(LiepinAccountMapper.class);
     private final JdMapper jobs = mock(JdMapper.class);
     private final SearchTaskMapper tasks = mock(SearchTaskMapper.class);
@@ -34,9 +31,7 @@ class CapabilityContractTest {
     private final NotifyService notify = mock(NotifyService.class);
     private final HrAgentProperties props = new HrAgentProperties();
     private final RiskSuspectGuard guard = new RiskSuspectGuard(props);
-    private final LiepinCommandService commands = new LiepinCommandService(executor, accounts, notify, guard,
-            new CuaDriverExecutor(new AccountLocks(), new CliSpawnCounter(), props),
-            new CuaCommandResolver(props));
+    private final LiepinCommandService commands = new LiepinCommandService(executor, accounts, notify, guard);
     private final SearchTaskService search = new SearchTaskService(tasks, jobs, accounts, candidates,
             commands, queue, props, notify, guard);
     private final ResumeCollectService collect = new ResumeCollectService(greetings, candidates, accounts,
@@ -64,17 +59,18 @@ class CapabilityContractTest {
         task.setRetryCount(0);
         when(accounts.selectById(1L)).thenReturn(account);
         when(jobs.selectById(2L)).thenReturn(jd);
+        // UI 通道默认输出:records 结构(recommend/joblist 均读 records)
         when(executor.execute(any(), any(), any(String[].class)))
-                .thenReturn(new CliResult(0, "[]", "", false));
+                .thenReturn(new CliResult(0, "{\"records\":[]}", "", false));
     }
 
     @Test
     void recommendationBindsEachExplicitJobIncludingChangedBinding() throws Exception {
         search.execute(task);
-        verify(executor).execute(eq(account), any(Duration.class), eq("recommend"), eq("--jobId"), eq("101"), eq("--json"));
+        verify(executor).execute(eq(account), any(Duration.class), eq("recommend"), eq("--jobId"), eq("101"), eq("--with-ids"), eq("--json"));
         jd.setLiepinJobId("202");
         search.execute(task);
-        verify(executor).execute(eq(account), any(Duration.class), eq("recommend"), eq("--jobId"), eq("202"), eq("--json"));
+        verify(executor).execute(eq(account), any(Duration.class), eq("recommend"), eq("--jobId"), eq("202"), eq("--with-ids"), eq("--json"));
         verify(queue, times(2)).complete(3L);
         verifyNoInteractions(candidates);
     }
@@ -120,7 +116,7 @@ class CapabilityContractTest {
     }
 
     private void replyAndResult(String result) throws Exception {
-        when(executor.execute(eq(account), any(), eq("chatlist"), eq("--limit"), eq("100"), eq("--json")))
+        when(executor.execute(eq(account), any(), eq("chatlist"), eq("--json")))
                 .thenReturn(new CliResult(0, "[{\"im_id\":\"im-mock-1\",\"direction\":\"1\"}]", "", false));
         when(executor.execute(eq(account), any(), eq("request-resume"), anyString(), eq("--imId"), anyString(), eq("--json")))
                 .thenReturn(new CliResult(0, result, "", false));

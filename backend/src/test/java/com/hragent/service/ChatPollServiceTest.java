@@ -339,7 +339,7 @@ class ChatPollServiceTest {
     @Test
     void chatlistTransientFailureSkipsInboundWithoutBreakingRound() throws Exception {
         when(commandService.chatlist(any(), any()))
-                .thenThrow(new CliException(CliException.Type.FAILED, "liepin-cli 执行超时"));
+                .thenThrow(new CliException(CliException.Type.FAILED, "驱动执行超时"));
 
         int processed = chatPollService.pollOnce(account);
 
@@ -640,7 +640,7 @@ class ChatPollServiceTest {
         greeting(candidate);
 
         when(commandService.chatlist(any(), any()))
-                .thenThrow(new CliException(CliException.Type.TIMEOUT, "liepin-cli 执行超时(account=1)"))
+                .thenThrow(new CliException(CliException.Type.TIMEOUT, "驱动执行超时(account=1)"))
                 .thenReturn(List.of(objectMapper.readTree(
                         "{\"im_id\":\"im1\",\"direction\":\"0\",\"raw_metadata\":{\"oppositeRead\":\"1\"}}")));
         when(commandService.requestResume(any(), eq("r-im1"), any(), any()))

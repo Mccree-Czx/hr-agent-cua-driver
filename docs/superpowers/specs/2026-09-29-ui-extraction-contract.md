@@ -350,3 +350,28 @@ UI 输出形状:
   后续决策选项:a) 保留 legacy API 下载通道(与本替换目标冲突,需权衡);
   b) 后端改收"简历文本"(需后端/Schema 改造);c) UIA 通道点工具条(成功率低,未验证);
 - **代码同步**:findAttachmentRef 修复(通知卡排除+范围限定)+测试,驱动 136/136。
+
+### 全量替换定稿——attach UI 原生下载通道打通与 liepin-cli 彻底移除(2026-09-30)
+- **用户决策**:全量替换、不保留 liepin-cli(推翻混合模式);attach 也必须 UI 化。
+- **UI 原生下载通道(真机打通)**:
+  - 链路:打开会话 → 点「附件简历」页签 → **「附件预览」弹窗**(猎聘页面自带,
+    右上角含下载按钮)→ `get_window_state` 截图取窗口尺寸/capture_id →
+    `click(x,y)` 坐标点击下载按钮(box 坐标=x 相对窗口右缘 738px/y=430;
+    background 命中 UIA hit-test → Invoke;被丢弃则 foreground 升级)→
+    **Chrome 原生下载落盘 Downloads** → 差集识别 → 搬移工作目录 → PDF 校验;
+  - 三处边界防护(均真机验证):①会话标签轮换(attach 重试循环同步 readPage 机制);
+    ②Chrome 重名去重后缀 " (1)" 规范化;③`.crdownload` 临时态排除(等最终重命名);
+  - 关键前提:daemon 需 **无 manifest 的 unrestricted 模式**——driver 硬性限制
+    "origin-scoped manifest 不得允许 generic 输入工具(click 等)"(启动即拒:
+    origin-scoped capability manifests cannot allow 'click');manifest 样例保留于
+    deploy/cua-capabilities.yaml 并标注为参考不推荐。
+- **liepin-cli 彻底移除(代码/配置/工具/文档零残留)**:
+  - 后端:删 `LiepinCliExecutor`/`CuaCommandResolver`(及测试),`LiepinCommandService`
+    直走 CuaDriverExecutor(单通道);`LoginService`/`AutoRecruitScheduler` 换用
+    CuaDriverExecutor;`HrAgentProperties` 删 cua.enabled/commands 与 liepin.cliPath;
+    application.yml 删开关与命令路由(cua 段仅留 node/script/driver-bin);
+  - 部署:删 install-liepin-cli.sh;install-cua-driver.ps1 推荐无 manifest 启动;README/AGENTS
+    全量更新;删 tools/liepin-cli(85 文件)+测试桩 fake-liepin.*;
+  - 验证:后端 298/298、驱动 141/141 全绿;真机 smoke 三次(下载+搬移+校验+去重后缀场景)。
+- **历史参考**:本文件 §7/§8 早期条目中 legacy/CDP 通道描述均为历史记录,当前执行路径
+  仅 CuaDriverExecutor(UI)。

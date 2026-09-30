@@ -1,5 +1,5 @@
 /**
- * 退出码与错误契约(与 liepin-cli 保持一致,编排层/后端依赖):
+ * 退出码与错误契约(编排层/后端依赖;历史沿革自 liepin-cli,全量替换后为驱动自身契约):
  *   0 成功;1 一般错误;2 登录态失效;3 风控/安全异常。
  *
  * 注意:底层 `cua-driver call` 对"结构化拒绝(refusal)"也返回 exit 0,
@@ -49,7 +49,7 @@ export function truncate(s: string, max = 300): string {
 }
 
 /**
- * 风控/登录态特征扫描(与后端 LiepinCliExecutor 的双档语义一致,防误熔断):
+ * 风控/登录态特征扫描(与后端 CuaDriverExecutor/CliRiskDetector 的双档语义一致,防误熔断):
  * - 结构性标记(captchaPage / safe.liepin.com):全路径扫描——不会出现在正常业务文本里;
  * - 软标记(行为异常 / 安全验证 等中文短语):仅失败/超时路径扫描——
  *   候选人简历里的"安全验证"曾致连续三轮误熔断(2026-09-28 治理),不得在成功路径扫描。

@@ -10,7 +10,7 @@ import com.hragent.entity.Jd;
 import com.hragent.entity.LiepinAccount;
 import com.hragent.entity.SearchTask;
 import com.hragent.executor.CliException;
-import com.hragent.executor.LiepinCliExecutor;
+import com.hragent.executor.CuaDriverExecutor;
 import com.hragent.repository.AutoRecruitRoundMapper;
 import com.hragent.repository.JdMapper;
 import com.hragent.repository.LiepinAccountMapper;
@@ -91,7 +91,7 @@ public class AutoRecruitScheduler {
     private final AutoRecruitSettingService settingService;
     private final AutoRecruitRoundMapper roundMapper;
     private final RiskSuspectGuard riskSuspectGuard;
-    private final LiepinCliExecutor cliExecutor;
+    private final CuaDriverExecutor cliExecutor;
 
     /** 轮次互斥:同一时刻仅允许一轮(定时重叠跳过,手动触发拒绝) */
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -126,7 +126,7 @@ public class AutoRecruitScheduler {
                                 SearchTaskService searchTaskService, ScoringEngine scoringEngine,
                                 GreetingService greetingService, ChatPollService chatPollService,
                                 AutoRecruitSettingService settingService, AutoRecruitRoundMapper roundMapper,
-                                RiskSuspectGuard riskSuspectGuard, LiepinCliExecutor cliExecutor) {
+                                RiskSuspectGuard riskSuspectGuard, CuaDriverExecutor cliExecutor) {
         this.properties = properties;
         this.accountMapper = accountMapper;
         this.jdMapper = jdMapper;

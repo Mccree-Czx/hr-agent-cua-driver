@@ -7,7 +7,7 @@ import java.util.Optional;
 
 /**
  * 从 CLI 输出中提取 JSON。
- * liepin-cli 的 --json 输出可能混有中文提示行(如"正在跳转到..."),JSON 从第一个 '[' 或 '{' 开始。
+ * 驱动 CLI 的 --json 输出可能混有中文提示行(如"正在跳转到..."),JSON 从第一个 '[' 或 '{' 开始。
  */
 public final class JsonExtractor {
 

@@ -13,6 +13,9 @@
  * 已知联调项:会话页 URL(im_id → URL)待确认;browser_download 的目录审批行为待实测。
  */
 
+import { copyFileSync, existsSync, renameSync, unlinkSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { CuaError } from "../contract.js";
 import { currentSessionName } from "../cua/extract.js";
 import { clickRef, type SnapshotResult } from "../cua/session.js";
@@ -85,6 +88,94 @@ export interface AttachInput {
   dryRun: boolean;
 }
 
+/**
+ * 「附件简历」页签(附件预览弹窗入口;2026-09-30 真机:点击后打开弹窗,内含下载按钮)。
+ * 找不到页签=无附件入口(与旧"未检出附件卡"语义一致,诚实返回无附件)。
+ */
+export function findAttachmentTab(snap: SnapshotResult): { ref: string; name: string } | null {
+  const tab = snap.refs.find(
+    (r) => r.name !== null && r.name.trim() === "附件简历" && r.actions.includes("click"),
+  );
+  return tab === undefined ? null : { ref: tab.ref, name: "附件简历" };
+}
+
+/** 下载按钮基准(2026-09-30 真机实测):窗口 3072 宽时按钮中心 (2334,430);
+ * x 相对窗口右缘(3072-2334=738),y 固定(弹窗为页面固定布局,顶部距稳定)。
+ * 窗口尺寸变化时按右缘偏移换算;部署环境窗口固定,首点后如有偏差用邻域微调。
+ */
+export const DL_BUTTON_RIGHT_OFFSET = 738;
+export const DL_BUTTON_Y = 430;
+
+export function downloadButtonXY(windowWidth: number): { x: number; y: number } {
+  return { x: Math.round(windowWidth - DL_BUTTON_RIGHT_OFFSET), y: DL_BUTTON_Y };
+}
+
+/** Chrome 原生下载目录(可用 LIEPIN_DOWNLOAD_DIR 覆盖;测试/非默认部署用) */
+export function downloadsPath(): string {
+  return process.env.LIEPIN_DOWNLOAD_DIR ?? join(homedir(), "Downloads");
+}
+
+/** Chrome 重名去重后缀(" (1)"/" (2)"…)→ 规范化回原名(后端入库名含去重后缀无意义;
+ * 2026-09-30 smoke:Downloads 有同名旧文件时 Chrome 自动加 " (1)")。
+ */
+export function stripChromeDuplicateSuffix(name: string): string {
+  return name.replace(/ \(\d+\)(\.[^.]+)$/, "$1");
+}
+
+/** 把 Downloads 落盘文件搬入目标目录(文件名规范化去重后缀;同名覆盖;跨盘回退 copy+unlink) */
+export function moveIntoDir(src: string, dir: string): string {
+  const dest = join(dir, stripChromeDuplicateSuffix(fileNameOf(src)));
+  try {
+    if (existsSync(dest)) {
+      unlinkSync(dest);
+    }
+    renameSync(src, dest);
+    return dest;
+  } catch {
+    copyFileSync(src, dest);
+    try {
+      unlinkSync(src);
+    } catch {
+      /* 源文件清理失败不阻断(Downloads 残留可人工清理) */
+    }
+    return dest;
+  }
+}
+
+/** 坐标点击下载按钮(background 优先;background_unavailable 时 foreground 升级)
+ * 2026-09-30 真机:窗口截图坐标 (2334,430) background 点击即触发 Chrome 原生下载。
+ */
+async function clickDownloadButton(
+  ctx: UiContext,
+  pos: { x: number; y: number },
+  captureId?: string,
+): Promise<boolean> {
+  const base = {
+    pid: ctx.session.window.pid,
+    window_id: ctx.session.window.windowId,
+    x: pos.x,
+    y: pos.y,
+  };
+  try {
+    const res = await ctx.client.callTool(
+      "click",
+      captureId !== undefined && captureId !== "" ? { ...base, capture_id: captureId } : base,
+    );
+    return res.status === "ok";
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/background_unavailable/.test(msg)) {
+      try {
+        const res2 = await ctx.client.callTool("click", { ...base, delivery_mode: "foreground" });
+        return res2.status === "ok";
+      } catch {
+        return false;
+      }
+    }
+    throw err;
+  }
+}
+
 /** 附件检出+下载核心(返回三态;不抛业务失败,仅契约异常上抛) */
 export async function runAttachCore(ctx: UiContext, input: AttachInput): Promise<AttachOutcome> {
   const steps: string[] = [];
@@ -102,7 +193,7 @@ export async function runAttachCore(ctx: UiContext, input: AttachInput): Promise
         : "https://lpt.liepin.com/chat/im";
     let row: ReturnType<typeof findConversationRow> = null;
     for (let attempt = 1; attempt <= PAGE_RETRY_ATTEMPTS; attempt++) {
-      // 2026-09-30 与 readPage 同款:清场前置 + 单快照(include_screenshot 已在 snapshot() 固化)
+      // 2026-09-30 与 readPage/runReadChatMsg 同款:清场前置 + 单快照 + 残缺后标签轮换
       await navigate(ctx, "about:blank", 800);
       await navigate(ctx, listUrl, 3000);
       row = findConversationRow((await takeSnapshot(ctx)).refs, input.name);
@@ -111,6 +202,9 @@ export async function runAttachCore(ctx: UiContext, input: AttachInput): Promise
       }
       note(`会话行未找到(疑似语义快照残缺),清场重试 ${attempt}/${PAGE_RETRY_ATTEMPTS}`);
       if (attempt < PAGE_RETRY_ATTEMPTS) {
+        if (ctx.rotateSession !== undefined) {
+          await ctx.rotateSession();
+        }
         await ctx.sleep(1_800);
       }
     }
@@ -145,49 +239,64 @@ export async function runAttachCore(ctx: UiContext, input: AttachInput): Promise
     note(`im_id=${input.imId}(仅留痕;UI 按 --url 直达会话)`);
   }
 
-  const target = findAttachmentRef(snap);
-  if (target === null) {
-    note("未检出附件卡片");
+  const tab = findAttachmentTab(snap);
+  if (tab === null) {
+    note("未检出附件入口(「附件简历」页签)");
     return { found: false, success: false, reason: "no-attachment", steps };
   }
-  note(`检出附件卡片「${target.name}」(${target.ref})`);
+  note(`检出附件入口「${tab.name}」(${tab.ref})`);
 
   if (input.dryRun) {
-    return { found: true, success: false, reason: "dry-run", detail: `target=${target.ref}`, steps };
+    return { found: true, success: false, reason: "dry-run", detail: `target=${tab.ref}`, steps };
   }
 
-  const outRoot = ensureAbsoluteDir(input.outDir);
-  note(`下载目录: ${outRoot}`);
-  const before = listDir(outRoot);
-  note(`目录基线 ${before.length} 个文件`);
+  // 打开「附件预览」弹窗(2026-09-30 v2:UI 原生下载通道,替代 browser_download)
+  await clickRef(ctx.client, ctx.session, tab.ref);
+  await ctx.sleep(3_000);
+  note("附件预览弹窗已打开");
 
-  const result = await ctx.client.callTool("browser_download", {
-    target_id: ctx.session.targetId,
-    tab_id: ctx.session.activeTabId,
-    ref: target.ref,
-    destination_root: outRoot,
+  // 截图取窗口尺寸与 capture_id(坐标锚点),计算下载按钮位置
+  const shot = await ctx.client.requireOk("get_window_state", {
+    pid: ctx.session.window.pid,
+    window_id: ctx.session.window.windowId,
+    include_accessibility_tree: false,
+    include_screenshot: true,
+    max_image_dimension: 0,
   });
-  if (result.status === "refused") {
-    note(`browser_download 被拒绝(${result.refusalCode})`);
-    return {
-      found: true,
-      success: false,
-      reason: "download-refused",
-      detail: `${result.refusalCode}: ${result.refusalMessage ?? ""}`.trim(),
-      steps,
-    };
-  }
-  note("下载已触发,等待落盘");
+  const winWidth = typeof shot.screenshot_width === "number" ? shot.screenshot_width : 3072;
+  const pos = downloadButtonXY(winWidth);
+  note(`下载按钮坐标(${pos.x},${pos.y}) 窗口宽 ${winWidth}`);
 
-  const filePath = await waitForNewFile(outRoot, before, {
+  // Downloads 基线(Chrome 原生下载直接落盘默认下载目录)
+  const downloadsDir = downloadsPath();
+  const before = listDir(downloadsDir);
+  note(`Downloads 基线 ${before.length} 个文件 (${downloadsDir})`);
+
+  const clicked = await clickDownloadButton(
+    ctx,
+    pos,
+    typeof shot.capture_id === "string" ? shot.capture_id : undefined,
+  );
+  if (!clicked) {
+    note("下载按钮点击未成功");
+    return { found: true, success: false, reason: "download-click-failed", detail: "下载按钮点击未成功投递", steps };
+  }
+  note("下载按钮已点击,等待落盘");
+
+  const downloaded = await waitForNewFile(downloadsDir, before, {
     sleep: ctx.sleep,
     now: ctx.now ?? (() => Date.now()),
   });
-  if (filePath === null) {
+  if (downloaded === null) {
     note("等待落盘超时(未发现新文件)");
     return { found: true, success: false, reason: "download-no-file", detail: "等待新文件超时", steps };
   }
-  note(`新文件: ${fileNameOf(filePath)}`);
+  note(`下载落盘: ${fileNameOf(downloaded)}`);
+
+  // 搬移到后端工作目录(attachWorkDir)
+  const outRoot = ensureAbsoluteDir(input.outDir);
+  const filePath = moveIntoDir(downloaded, outRoot);
+  note(`已搬移到 ${filePath}`);
 
   try {
     const validated = validateResumeFile(filePath);

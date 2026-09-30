@@ -11,7 +11,7 @@ import java.util.Set;
 
 /**
  * 期望职能三态判定(设计 4.2):MATCH / MISMATCH / UNKNOWN。
- * 口径与 CLI {@code tools/liepin-cli/src/toolset/resume.ts} 的 matchJobExpectations 完全一致:
+ * 口径(历史沿革自猎聘简历期望字段的 matchJobExpectations,现已内置本模块):
  * - 仅用「明确同义映射」判定,不按"工程师"、行业或关键词包含关系泛化;
  * - 多个期望任一与目标同职能即 MATCH;
  * - 明确分类证据冲突/缺失、期望缺失或格式异常 → UNKNOWN;

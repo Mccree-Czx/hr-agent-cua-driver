@@ -5,10 +5,8 @@ import com.hragent.common.BizException;
 import com.hragent.entity.LiepinAccount;
 import com.hragent.executor.CliException;
 import com.hragent.executor.CliResult;
-import com.hragent.executor.CuaCommandResolver;
 import com.hragent.executor.CuaDriverExecutor;
 import com.hragent.executor.JsonExtractor;
-import com.hragent.executor.LiepinCliExecutor;
 import com.hragent.notify.NotifyService;
 import com.hragent.repository.LiepinAccountMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -21,8 +19,11 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * liepin-cli 命令语义封装:把 CLI 细节(参数顺序、--json、输出解析)收敛在此,
- * 上层业务(搜索/评分/打招呼)只与 JsonNode 打交道。
+ * 猎聘平台命令语义封装:由 cua-liepin-driver(UI 通道)执行全部平台操作,
+ * 把驱动细节(参数顺序、--json、输出解析)收敛在此,上层业务只与 JsonNode 打交道。
+ *
+ * <p>2026-09-30 全量替换定稿:liepin-cli(legacy CDP 通道)已彻底移除,
+ * 本服务直走 CUA UI 通道(风控链路不变)。
  *
  * 风控/登录态异常会同步标记账号状态(熔断/需扫码),评审 P0-3。
  */
@@ -30,36 +31,27 @@ import java.util.Optional;
 @Service
 public class LiepinCommandService {
 
-    private final LiepinCliExecutor executor;
     private final CuaDriverExecutor cuaDriverExecutor;
-    private final CuaCommandResolver cuaCommandResolver;
     private final LiepinAccountMapper accountMapper;
     private final NotifyService notifyService;
     private final RiskSuspectGuard riskSuspectGuard;
 
-    public LiepinCommandService(LiepinCliExecutor executor, LiepinAccountMapper accountMapper,
-                                NotifyService notifyService, RiskSuspectGuard riskSuspectGuard,
-                                CuaDriverExecutor cuaDriverExecutor, CuaCommandResolver cuaCommandResolver) {
-        this.executor = executor;
+    public LiepinCommandService(CuaDriverExecutor cuaDriverExecutor, LiepinAccountMapper accountMapper,
+                                NotifyService notifyService, RiskSuspectGuard riskSuspectGuard) {
+        this.cuaDriverExecutor = cuaDriverExecutor;
         this.accountMapper = accountMapper;
         this.notifyService = notifyService;
         this.riskSuspectGuard = riskSuspectGuard;
-        this.cuaDriverExecutor = cuaDriverExecutor;
-        this.cuaCommandResolver = cuaCommandResolver;
     }
 
-    /** 搜索人才 → 候选人数组 */
+    /** 搜索人才 → 候选人数组(UI 通道:搜索页 records;--with-ids 逐卡穿透取 resume_id) */
     public List<JsonNode> search(LiepinAccount account, String keywords, int limit, Duration timeout) {
-        boolean ui = cuaCommandResolver.useUi("search");
-        // UI 通道:搜索页 records(--with-ids 逐卡穿透取 resume_id;页面条数固定无 limit 语义)
-        CliResult result = ui
-                ? run(account, timeout, "search", keywords, "--with-ids", "--json")
-                : run(account, timeout, "search", keywords, "--limit", String.valueOf(limit), "--json");
+        CliResult result = run(account, timeout, "search", keywords, "--with-ids", "--json");
         JsonNode node = JsonExtractor.parse(result.stdout())
                 .orElseThrow(() -> BizException.badRequest("搜索输出无有效 JSON"));
-        JsonNode rows = ui ? node.path("records") : node;
+        JsonNode rows = node.path("records");
         if (!rows.isArray()) {
-            throw BizException.badRequest("搜索输出不是数组: " + truncate(result.stdout()));
+            throw BizException.badRequest("搜索(UI)输出缺少 records 数组");
         }
         List<JsonNode> list = new ArrayList<>();
         rows.forEach(list::add);
@@ -74,24 +66,19 @@ public class LiepinCommandService {
 
     /**
      * 平台推荐候选人 → 数组(依赖猎聘上已发布的职位)。
-     * 双通道归一为数组输出:
-     * - legacy(liepin-cli):直接为数组(含 resume_id/name/talentId 等);
-     * - UI(cua-liepin-driver):输出 {records:[{name,age,expect_position,...,resume_id?}],...};
-     *   --with-ids 逐卡穿透保证 resume_id 可得(评分链依赖其落库触发详情补齐)。
+     * UI 通道输出 {records:[{name,age,expect_position,...,resume_id?}],...};
+     * --with-ids 逐卡穿透保证 resume_id 可得(评分链依赖其落库触发详情补齐)。
      */
     public List<JsonNode> recommend(LiepinAccount account, String jobId, Duration timeout) {
         if (jobId == null || !jobId.matches("[1-9][0-9]*")) {
             throw BizException.badRequest("推荐必须指定有效的猎聘岗位 ID");
         }
-        boolean ui = cuaCommandResolver.useUi("recommend");
-        CliResult result = ui
-                ? run(account, timeout, "recommend", "--jobId", jobId, "--with-ids", "--json")
-                : run(account, timeout, "recommend", "--jobId", jobId, "--json");
+        CliResult result = run(account, timeout, "recommend", "--jobId", jobId, "--with-ids", "--json");
         JsonNode node = JsonExtractor.parse(result.stdout())
                 .orElseThrow(() -> BizException.badRequest("recommend 输出无有效 JSON"));
-        JsonNode rows = ui ? node.path("records") : node;
+        JsonNode rows = node.path("records");
         if (!rows.isArray()) {
-            throw BizException.badRequest(ui ? "recommend(UI)输出缺少 records 数组" : "recommend 输出不是数组: " + truncate(result.stdout()));
+            throw BizException.badRequest("recommend(UI)输出缺少 records 数组");
         }
         List<JsonNode> list = new ArrayList<>();
         rows.forEach(list::add);
@@ -106,21 +93,16 @@ public class LiepinCommandService {
 
     /**
      * 猎聘职位列表(招聘者端,用于同步到系统岗位管理)。
-     * 双通道归一为数组输出:
-     * - legacy(liepin-cli):直接为数组(含 jobId/title/status/city/salary);
-     * - UI(cua-liepin-driver):输出 {records:[{title,city,salary,status,refreshed_at,jobId?}],...},
-     *   本方法读 records;--with-ids 逐行穿透保证 jobId 可得(下游同步/复核依赖)。
+     * UI 通道输出 {records:[{title,city,salary,status,refreshed_at,jobId?}],...},
+     * 本方法读 records;--with-ids 逐行穿透保证 jobId 可得(下游同步/复核依赖)。
      */
     public List<JsonNode> jobList(LiepinAccount account, Duration timeout) {
-        boolean ui = cuaCommandResolver.useUi("joblist");
-        CliResult result = ui
-                ? run(account, timeout, "joblist", "--with-ids", "--json")
-                : run(account, timeout, "joblist", "--limit", "40", "--json");
+        CliResult result = run(account, timeout, "joblist", "--with-ids", "--json");
         JsonNode node = JsonExtractor.parse(result.stdout())
                 .orElseThrow(() -> BizException.badRequest("joblist 输出无有效 JSON"));
-        JsonNode rows = ui ? node.path("records") : node;
+        JsonNode rows = node.path("records");
         if (!rows.isArray()) {
-            throw BizException.badRequest(ui ? "joblist(UI)输出缺少 records 数组" : "joblist 输出不是数组");
+            throw BizException.badRequest("joblist(UI)输出缺少 records 数组");
         }
         List<JsonNode> list = new ArrayList<>();
         rows.forEach(list::add);
@@ -135,11 +117,10 @@ public class LiepinCommandService {
 
     /**
      * 聊天列表 → 数组(同意/已读状态检测依据)。
-     * 固定取 100 条(CLI 上限):新招呼会把旧会话挤出较小分页窗口,曾导致已回复候选人漏检
-     * (2026-09-26:25 条新招呼把 14 点答复的候选人挤出了默认 30 条窗口)。
+     * UI 通道固定拉取当前渲染的会话列表条目(无分页参数)。
      */
     public List<JsonNode> chatlist(LiepinAccount account, Duration timeout) {
-        CliResult result = run(account, timeout, "chatlist", "--limit", "100", "--json");
+        CliResult result = run(account, timeout, "chatlist", "--json");
         JsonNode node = JsonExtractor.parse(result.stdout())
                 .orElseThrow(() -> BizException.badRequest("chatlist 输出无有效 JSON"));
         if (!node.isArray()) {
@@ -187,9 +168,8 @@ public class LiepinCommandService {
     }
 
     /**
-     * 获取简历附件(2026-09-30 增 UI 会话名键)。
-     * UI 通道:优先 --imId;无 im_id 时用 --name <会话名>(会话名键,自动导航 /chat/im 点开会话);
-     * legacy 通道:必须 im_id,缺失时返回空(不猜测,原上层守卫下沉)。
+     * 获取简历附件(UI 会话名键)。
+     * 优先 --imId;无 im_id 时用 --name <会话名>(会话名键,自动导航 /chat/im 点开会话);
      * 输出三态 JSON:{found:false,reason:no-attachment} / {found:true,success:false,reason} / 成功含 file/bytes/sha256/fileName。
      */
     public Optional<JsonNode> attachFetch(LiepinAccount account, String imId, String sessionName,
@@ -197,24 +177,15 @@ public class LiepinCommandService {
         if (outDir == null || outDir.isBlank()) {
             throw BizException.badRequest("attach-fetch 必须提供下载目录");
         }
-        boolean ui = cuaCommandResolver.useUi("attach-fetch");
         CliResult result;
-        if (ui) {
-            if (imId != null && !imId.isBlank()) {
-                result = run(account, timeout, "attach-fetch",
-                        "--imId", imId, "--out", outDir, "--json");
-            } else if (sessionName != null && !sessionName.isBlank()) {
-                result = run(account, timeout, "attach-fetch",
-                        "--name", sessionName, "--out", outDir, "--json");
-            } else {
-                return Optional.empty(); // 无键不猜测
-            }
-        } else {
-            if (imId == null || imId.isBlank()) {
-                return Optional.empty(); // legacy 无 im_id 不调(原上层守卫下沉)
-            }
+        if (imId != null && !imId.isBlank()) {
             result = run(account, timeout, "attach-fetch",
                     "--imId", imId, "--out", outDir, "--json");
+        } else if (sessionName != null && !sessionName.isBlank()) {
+            result = run(account, timeout, "attach-fetch",
+                    "--name", sessionName, "--out", outDir, "--json");
+        } else {
+            return Optional.empty(); // 无键不猜测
         }
         return JsonExtractor.parse(result.stdout());
     }
@@ -244,30 +215,20 @@ public class LiepinCommandService {
     }
 
     private CliResult run(LiepinAccount account, Duration timeout, String... args) {
-        // 命令级路由(2026-09-29 W2):args[0]=命令名;命令配置为 ui 时走 CUA UI 通道,默认 legacy
-        String command = args.length > 0 && args[0] != null ? args[0] : "";
-        boolean ui = cuaCommandResolver.useUi(command);
-        String channel = ui ? "cua-liepin-driver(UI)" : "liepin-cli";
-
+        // 2026-09-30 全量替换:UI 通道为唯一执行路径(liepin-cli/legacy 已移除)
         CliResult result;
         try {
-            result = ui
-                    ? cuaDriverExecutor.execute(account, timeout, args)
-                    : executor.execute(account, timeout, args);
+            result = cuaDriverExecutor.execute(account, timeout, args);
         } catch (IOException e) {
             throw new CliException(CliException.Type.FAILED,
-                    channel + " 启动失败(可执行文件/脚本路径不存在?): " + e.getMessage(), e);
+                    "cua-liepin-driver 启动失败(可执行文件/脚本路径不存在?): " + e.getMessage(), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new CliException(CliException.Type.FAILED, "执行被中断", e);
         }
 
         try {
-            if (ui) {
-                cuaDriverExecutor.checkRisk(account, result);
-            } else {
-                executor.checkRisk(account, result);
-            }
+            cuaDriverExecutor.checkRisk(account, result);
         } catch (CliException e) {
             markAccountByException(account, e);
             throw e;

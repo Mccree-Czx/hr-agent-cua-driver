@@ -72,31 +72,13 @@ hr-agent:
     # 会话列表拉取失败后的轮内重试等待(毫秒)
     poll-retry-delay-millis: ${AUTO_RECRUIT_POLL_RETRY_DELAY_MILLIS:20000}
   cua:
-    # UI 驱动通道(全量替换计划 W1 骨架;默认关闭,行为与既有完全一致)
-    enabled: ${CUA_ENABLED:false}
+    # UI 驱动通道(2026-09-30 全量替换定稿):全部平台命令经 cua-liepin-driver 真实 UI 操作执行,
+    # liepin-cli(legacy)已彻底移除——本段即唯一执行路径,无开关无命令路由。
     # node 可执行文件 + 驱动入口脚本绝对路径(指向 tools/cua-liepin-driver/dist/cli/index.js)
     node-path: ${CUA_NODE_PATH:node}
     script-path: ${CUA_SCRIPT_PATH:}
     # cua-driver 可执行文件(留空则从 PATH 查找)
     driver-bin: ${CUA_DRIVER_BIN:}
-    # 命令级路由:命令名 → ui|legacy(未配置=legacy;run() 按 args[0] 统一判定)
-    # 全量切换模板(W6 收口;完成观察期准备后启用 enabled: true 并按序放开对应命令):
-    #   commands:
-    #     login: ui
-    #     joblist: ui
-    #     chatlist: ui
-    #     chatmsg: ui
-    #     resume: ui
-    #     recommend: ui
-    #     search: ui
-    #     greet: ui
-    #     request-resume: ui
-    #     send-message: ui
-    #     attach-fetch: ui
-    #     attach-download: ui
-    #     jobpublish: ui
-    #     jobdelete: ui
-    commands: {}
   storage:
     type: ${STORAGE_TYPE:minio}
     minio:

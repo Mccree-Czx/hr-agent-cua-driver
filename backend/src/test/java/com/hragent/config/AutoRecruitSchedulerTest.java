@@ -9,7 +9,7 @@ import com.hragent.entity.Jd;
 import com.hragent.entity.LiepinAccount;
 import com.hragent.entity.SearchTask;
 import com.hragent.executor.CliException;
-import com.hragent.executor.LiepinCliExecutor;
+import com.hragent.executor.CuaDriverExecutor;
 import com.hragent.repository.AppSettingMapper;
 import com.hragent.repository.AutoRecruitRoundMapper;
 import com.hragent.repository.JdMapper;
@@ -114,7 +114,7 @@ class AutoRecruitSchedulerTest {
 
     /** 平台足迹计数器 mock:测试中由各服务桩的 Answer 模拟"触达平台即递增" */
     @MockitoBean
-    private LiepinCliExecutor cliExecutor;
+    private CuaDriverExecutor cliExecutor;
 
     private Long accountId;
 

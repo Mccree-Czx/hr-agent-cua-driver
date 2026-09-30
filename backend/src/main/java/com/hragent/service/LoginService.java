@@ -2,7 +2,7 @@ package com.hragent.service;
 
 import com.hragent.entity.LiepinAccount;
 import com.hragent.executor.CliResult;
-import com.hragent.executor.LiepinCliExecutor;
+import com.hragent.executor.CuaDriverExecutor;
 import com.hragent.repository.LiepinAccountMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -15,21 +15,21 @@ import java.util.concurrent.Executors;
 
 /**
  * 扫码登录落点(评审 P2-12):
- * - 后台线程执行 liepin login(有头浏览器窗口弹出,本机扫码)
- * - 解析 CLI 输出判断登录结果,同步更新账号 login_status
+ * - 后台线程执行 cua-liepin-driver login(有头浏览器窗口弹出,本机扫码)
+ * - 解析驱动输出判断登录结果,同步更新账号 login_status
  * - Web 端通过轮询账号状态确认登录完成
  */
 @Slf4j
 @Service
 public class LoginService {
 
-    private final LiepinCliExecutor executor;
+    private final CuaDriverExecutor executor;
     private final LiepinAccountMapper accountMapper;
     private final ExecutorService loginPool = Executors.newFixedThreadPool(2);
     /** 正在登录中的账号:accountId -> 开始时间戳 */
     private final Map<Long, Long> loggingIn = new ConcurrentHashMap<>();
 
-    public LoginService(LiepinCliExecutor executor, LiepinAccountMapper accountMapper) {
+    public LoginService(CuaDriverExecutor executor, LiepinAccountMapper accountMapper) {
         this.executor = executor;
         this.accountMapper = accountMapper;
     }

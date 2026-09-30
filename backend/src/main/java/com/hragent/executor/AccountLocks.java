@@ -9,9 +9,8 @@ import java.util.concurrent.locks.ReentrantLock;
 /**
  * 账号维度互斥锁注册表(终审 I1;2026-09-29 CUA 全量替换 W1 抽出共享)。
  *
- * <p>所有自动化通道(LiepinCliExecutor 的 CDP 通道、CuaDriverExecutor 的 UI 通道)
- * 必须共用同一把账号锁:同账号任意两条通道的调用在此串行,避免同一
- * Chrome/profile 上的 CDP 与 UI 自动化并发互踩;不同账号各自独立仍可并发。
+ * <p>所有自动化调用(CuaDriverExecutor)必须共用同一把账号锁:同账号任意并发调用
+ * 在此串行,避免同一 Chrome/profile 上的自动化互踩;不同账号各自独立仍可并发。
  */
 @Component
 public class AccountLocks {

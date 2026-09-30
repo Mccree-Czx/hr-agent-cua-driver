@@ -80,31 +80,31 @@ class CuaDriverExecutorTest {
         assertEquals("D:/profiles/custom-9", newExecutor().buildEnv(account).get("LIEPIN_USER_DATA_DIR"));
     }
 
-    // ---------- 共享账号锁:UI 与 CDP 两通道同账号必须串行 ----------
+    // ---------- 共享账号锁:同账号执行必须串行(不同实例共享同一把锁) ----------
 
     @Test
-    void sameAccountUiAndCdpChannelsAreSerialized() throws Exception {
-        ProbeCuaExecutor cua = new ProbeCuaExecutor(accountLocks, spawnCounter, properties);
-        ProbeLiepinExecutor cdp = new ProbeLiepinExecutor(accountLocks, spawnCounter);
+    void sameAccountExecutionsAreSerialized() throws Exception {
+        ProbeCuaExecutor a = new ProbeCuaExecutor(accountLocks, spawnCounter, properties);
+        ProbeCuaExecutor b = new ProbeCuaExecutor(accountLocks, spawnCounter, properties);
         LiepinAccount account = account(1);
 
-        runConcurrently(() -> cua.execute(account, Duration.ofSeconds(5), "x"),
-                () -> cdp.execute(account, Duration.ofSeconds(5), "x"));
+        runConcurrently(() -> a.execute(account, Duration.ofSeconds(5), "x"),
+                () -> b.execute(account, Duration.ofSeconds(5), "x"));
 
-        int max = Math.max(cua.maxConcurrent.get(), cdp.maxConcurrent.get());
-        assertEquals(1, max, "同账号 UI 与 CDP 通道的并发执行必须串行(共享账号锁)");
+        int max = Math.max(a.maxConcurrent.get(), b.maxConcurrent.get());
+        assertEquals(1, max, "同账号并发执行必须串行(共享账号锁)");
     }
 
     @Test
-    void differentAccountsAcrossChannelsStillParallel() throws Exception {
-        ProbeCuaExecutor cua = new ProbeCuaExecutor(accountLocks, spawnCounter, properties);
-        ProbeLiepinExecutor cdp = new ProbeLiepinExecutor(accountLocks, spawnCounter);
+    void differentAccountsStillParallel() throws Exception {
+        ProbeCuaExecutor a = new ProbeCuaExecutor(accountLocks, spawnCounter, properties);
+        ProbeCuaExecutor b = new ProbeCuaExecutor(accountLocks, spawnCounter, properties);
 
-        runConcurrently(() -> cua.execute(account(1), Duration.ofSeconds(5), "x"),
-                () -> cdp.execute(account(2), Duration.ofSeconds(5), "x"));
+        runConcurrently(() -> a.execute(account(1), Duration.ofSeconds(5), "x"),
+                () -> b.execute(account(2), Duration.ofSeconds(5), "x"));
 
-        assertEquals(1, cua.maxConcurrent.get());
-        assertEquals(1, cdp.maxConcurrent.get(), "不同账号应可并发(各自独立锁)");
+        assertEquals(1, a.maxConcurrent.get());
+        assertEquals(1, b.maxConcurrent.get(), "不同账号应可并发(各自独立锁)");
     }
 
     // ---------- 共享平台足迹计数 ----------
@@ -187,31 +187,6 @@ class CuaDriverExecutorTest {
                 concurrent.decrementAndGet();
             }
             return new CliResult(0, "{\"status\":\"ok\"}", "", false);
-        }
-    }
-
-    /** CDP 通道探针(共享同一把账号锁与计数器) */
-    private static class ProbeLiepinExecutor extends LiepinCliExecutor {
-
-        final AtomicInteger concurrent = new AtomicInteger();
-        final AtomicInteger maxConcurrent = new AtomicInteger();
-
-        ProbeLiepinExecutor(AccountLocks locks, CliSpawnCounter counter) {
-            super(new HrAgentProperties(), locks, counter);
-        }
-
-        @Override
-        protected CliResult runCli(LiepinAccount account, Duration timeout, String... args) {
-            int current = concurrent.incrementAndGet();
-            maxConcurrent.accumulateAndGet(current, Math::max);
-            try {
-                Thread.sleep(300);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            } finally {
-                concurrent.decrementAndGet();
-            }
-            return new CliResult(0, "[]", "", false);
         }
     }
 }
