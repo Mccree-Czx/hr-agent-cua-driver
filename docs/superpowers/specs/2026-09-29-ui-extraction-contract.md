@@ -224,3 +224,12 @@ UI 输出形状:
 - **待续**:快照完整性提升(如 daemon 空闲期/重启后首次更全的规律利用)与降级通道的真机闭环。
 - **daemon 重启规律(已验证两次)**:`cua-driver stop` + `serve --grant existing-profile` 后**立即执行**的命令可获得完整快照
   (attach 会话行/chatlist 96 行 均命中);已作为"完整快照优先策略"手段:重要读操作前可先重启 daemon。
+
+### browser_download 审批门(2026-09-30 真机)
+- **standard 模式**:download 被拒('browser_consent_required: requires approval through the MCP host's
+  destructive-tool confirmation flow');--grant 仅 standard 模式有效;
+- **bounded 模式**:需 `--capability-manifest <path>`(Narrow-only tool/resource manifest),缺失时 daemon 拒绝启动;
+- **unrestricted 模式**(--dangerously-bypass-approvals):daemon 可启动、attach 正常,但 browser_download
+  **仍被宿主层审批拦截**(与 daemon 权限模式无关,属"MCP 宿主"层的破坏性工具确认设计);
+- **结论**:下载放行需宿主层审批配置(待研究 capability-manifest 格式/宿主审批接口);
+  attach 其余全链路(会话行定位→点开会话→附件卡片检出→目录基线→下载触发)已真机验证可达下载点。
