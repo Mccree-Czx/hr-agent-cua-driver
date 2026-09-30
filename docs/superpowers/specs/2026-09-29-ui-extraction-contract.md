@@ -281,6 +281,21 @@ UI 输出形状:
   属 driver 预览层实现限制;缓解方向:限制单次穿透卡数/每卡后重建标签,待续;
 - **chatlist 噪声防御**:超长消息、时间样式、噪声词(新收/新招呼等)过滤+同名去重;
   真机 6 条 records(5 正确,"新收/3" 通知卡残留一处待续)。
+
+### 能力清单与下载门研究(2026-09-30 晚,进行中)
+- **deploy/cua-capabilities.yaml(v3)**:它与 `--dangerously-bypass-approvals --approve-capability-manifest` 组合,
+  将审批绕过收窄到猎聘 typed-browser 工作面;清单含:existing_profile + origins
+  (about:blank/lpt/tdoss/api-c) + Chrome app 窗口授权 + files.write(Temp 递归) + 工具白名单;
+- **启动**:`serve --dangerously-bypass-approvals --capability-manifest <abs> --approve-capability-manifest`
+  (status 显示 `configured=true, approved_at_startup=true, valid=true`);
+- **真机逐层解开**(受清单约束的拒绝与修正):
+  1. `list_windows` → 需 `desktop.display: true`(desktop display observation);
+  2. `browser_prepare` → 需 `resources.apps` 声明 Chrome 可执行文件(pid/window 授权);
+  3. `browser_navigate` → 清场 about:blank 与主站均需在 `origins`;
+  4. `browser_download` → 目标路径需在 `files.write`;
+- **残余**:最后一层 browser_download 仍报 `browser_consent_required`(MCP-host destructive confirmation);
+  manifest 的 approval-bypass 与该确认流的语义关系待续研究(文档:“unrestricted + manifest → bypass
+  仅限 manifest 范围”未如期生效于 download)。
 - **daemon 重启规律(已验证两次)**:`cua-driver stop` + `serve --grant existing-profile` 后**立即执行**的命令可获得完整快照
   (attach 会话行/chatlist 96 行 均命中);已作为"完整快照优先策略"手段:重要读操作前可先重启 daemon。
 
