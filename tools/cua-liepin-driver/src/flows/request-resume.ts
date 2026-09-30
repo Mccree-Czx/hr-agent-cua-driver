@@ -34,15 +34,18 @@ export interface RequestResumeOutcome {
   steps: string[];
 }
 
-/** 索要简历快捷按钮(IM 面板,文案「索要简历」;liepin-cli 侧选择器 .im-ui-action-button.action-resume) */
+/** 索要简历快捷按钮(IM 面板与简历详情页;真机实测 2026-09-30:
+ * 简历详情页实际文案为「向 TA 索要」(旧「索要简历」保留兼容);
+ * liepin-cli 侧选择器 .im-ui-action-button.action-resume */
 export const RESUME_ACTION_MATCHER: NameMatcher = {
-  names: ["索要简历"],
+  names: ["索要简历", "向TA索要", "向 TA 索要"],
   actions: ["click"],
-  excludeNames: ["已索要", "索要成功"],
+  excludeNames: ["已索要", "索要成功", "索要中"],
 };
 
-/** 已索要标志(先于点击检查,幂等短路) */
-export const ALREADY_REQUESTED_TEXTS = ["已索要", "索要成功", "已请求", "索要简历成功"];
+/** 已索要标志(先于点击检查,幂等短路;真机实测 2026-09-30:
+ * 简历详情页点击「向TA索要」后按钮/提示变为「索要中」——同列作证据与幂等依据) */
+export const ALREADY_REQUESTED_TEXTS = ["已索要", "索要成功", "已请求", "索要简历成功", "索要中"];
 
 /** 确认弹窗标志(出现任一即视为弹窗在场;liepin-cli 确认文案观测为 确定|确认|立即索要 一类) */
 export const CONFIRM_DIALOG_MARKERS = ["确认索要", "是否索要", "立即索要", "向候选人索要"];
