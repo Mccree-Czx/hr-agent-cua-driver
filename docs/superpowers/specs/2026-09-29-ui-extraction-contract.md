@@ -251,6 +251,17 @@ UI 输出形状:
 - **真机效果**:recommend 快照由持续 24 行恢复完整(轮换自动发生);
 - **残余**:recommend `--with-ids` 穿透时 ref 仍报 superseded(已验证 ref 本身有效,
   疑为轮换/穿透时序耦合,待续)。
+
+### 穿透稳定性修复与 recommend 预览层限制(2026-09-30)
+- **stale 重试(已生效)**:captureIdsByClickThrough 在 stale/superseded/`Frame ... not found` 时
+  重新快照同序重试(至多2次);真机日志证实(p109:270/p111:600 均为 stale 重试1成功);
+- **穿透回列表加清场**:预览层(#preview)为独立 frame,直接回列表会残留损坏;
+  现改为 about:blank 清场→回列表(测试 124/124);
+- **残余限制**:recommend 多卡穿透在该预览层 frame 下仍会累积 driver 状态异常
+  (`browser_route_unavailable: Accessibility.getFullAXTree failed: Frame ... not found`),
+  属 driver 预览层实现限制;缓解方向:限制单次穿透卡数/每卡后重建标签,待续;
+- **chatlist 噪声防御**:超长消息、时间样式、噪声词(新收/新招呼等)过滤+同名去重;
+  真机 6 条 records(5 正确,"新收/3" 通知卡残留一处待续)。
 - **daemon 重启规律(已验证两次)**:`cua-driver stop` + `serve --grant existing-profile` 后**立即执行**的命令可获得完整快照
   (attach 会话行/chatlist 96 行 均命中);已作为"完整快照优先策略"手段:重要读操作前可先重启 daemon。
 

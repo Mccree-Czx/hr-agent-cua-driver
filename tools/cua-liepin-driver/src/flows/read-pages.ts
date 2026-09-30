@@ -161,7 +161,14 @@ export async function captureIdsByClickThrough(
     captures.push({ ref, url, id, id_source: idSource });
     ctx.log(`[穿透] ${ref} → ${id ?? "(未解析到 " + idParam + ")"} [${idSource}] @ ${url.slice(0, 120)}`);
 
-    // 返回列表页(点击可能导致导航;refs 已在本次穿透中消费完,无需保留)
+    // 返回列表页(先清场:预览层(#preview)为独立 frame,直接回列表会残留损坏
+    // → 下一次 get_browser_state 报 Frame not found — 2026-09-30 真机)
+    await ctx.client.requireOk("browser_navigate", {
+      target_id: ctx.session.targetId,
+      tab_id: ctx.session.activeTabId,
+      url: "about:blank",
+    });
+    await ctx.sleep(600);
     await ctx.client.requireOk("browser_navigate", {
       target_id: ctx.session.targetId,
       tab_id: ctx.session.activeTabId,

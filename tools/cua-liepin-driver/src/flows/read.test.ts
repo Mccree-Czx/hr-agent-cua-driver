@@ -153,7 +153,7 @@ test("runReadResume:无期望区块时标记 unvalidated 且不伪造数据", as
 
 test("captureIdsByClickThrough:点击→读 URL→返回列表页", async () => {
   const s = new Scenario();
-  s.click().snap([{ name: "张三" }], "https://lpt.liepin.com/resume/detail?resIdEncode=cap-1").nav();
+  s.click().snap([{ name: "张三" }], "https://lpt.liepin.com/resume/detail?resIdEncode=cap-1").nav().nav();
 
   const captures = await captureIdsByClickThrough(makeCtx(s), ["p1:5"], RESUME_URL, "resIdEncode", false);
 
@@ -161,9 +161,9 @@ test("captureIdsByClickThrough:点击→读 URL→返回列表页", async () => 
   assert.equal(captures[0].id, "cap-1");
   assert.equal(captures[0].id_source, "url");
   assert.equal(captures[0].url, "https://lpt.liepin.com/resume/detail?resIdEncode=cap-1");
-  assert.deepEqual(s.tools(), ["browser_click", "get_browser_state", "browser_navigate"]);
+  assert.deepEqual(s.tools(), ["browser_click", "get_browser_state", "browser_navigate", "browser_navigate"]);
   assert.equal(s.calls[0].args.ref, "p1:5");
-  assert.equal(s.calls[2].args.url, RESUME_URL, "穿透后必须返回列表页");
+  assert.equal(s.calls[3].args.url, RESUME_URL, "穿透后必须返回列表页");
 });
 
 test("captureIdsByClickThrough:URL 无 id 时回退读预览层「简历编号」(联调校准)", async () => {
@@ -179,6 +179,7 @@ test("captureIdsByClickThrough:URL 无 id 时回退读预览层「简历编号�
       ],
       "https://lpt.liepin.com/chat/im#preview",
     )
+    .nav()
     .nav();
 
   const captures = await captureIdsByClickThrough(makeCtx(s), ["p1:7"], "https://lpt.liepin.com/chat/im", "resIdEncode", false);
@@ -186,12 +187,12 @@ test("captureIdsByClickThrough:URL 无 id 时回退读预览层「简历编号�
   assert.equal(captures[0].id, "eb75dde295fdSc7f903cb4428");
   assert.equal(captures[0].id_source, "preview");
   assert.equal(captures[0].url, "https://lpt.liepin.com/chat/im#preview");
-  assert.deepEqual(s.tools(), ["browser_click", "get_browser_state", "browser_navigate"]);
+  assert.deepEqual(s.tools(), ["browser_click", "get_browser_state", "browser_navigate", "browser_navigate"]);
 });
 
 test("captureIdsByClickThrough:预览层也无编号时不伪造 id", async () => {
   const s = new Scenario();
-  s.click().snap([{ name: "温女士" }, { name: "简历备注" }], "https://lpt.liepin.com/recommend#preview").nav();
+  s.click().snap([{ name: "温女士" }, { name: "简历备注" }], "https://lpt.liepin.com/recommend#preview").nav().nav();
 
   const captures = await captureIdsByClickThrough(makeCtx(s), ["p1:9"], "https://lpt.liepin.com/recommend", "resIdEncode", false);
 
@@ -266,6 +267,7 @@ test("runReadList:autoCaptureRows 逐行穿透并把 job_id 合并进 records(jo
     .snap([row]) // 快照(行)
     .click() // 穿透点击
     .snap([{ name: "销售经理" }], "https://lpt.liepin.com/job/detail/preview?ejob_id=J9")
+    .nav() // about:blank 清场(预览层 frame 残留防护)
     .nav() // 回列表
     .snap([row]);
 
@@ -297,6 +299,7 @@ test("runReadList:stale 点击被拒→重新快照同序重试成功(2026-09-30
     .snap([row]) // resolveRefs 重新快照
     .click() // 重试点击成功
     .snap([{ name: "销售经理" }], "https://lpt.liepin.com/job/detail/preview?ejob_id=J9")
+    .nav() // about:blank 清场
     .nav(); // 回列表
 
   const outcome = await runReadList(makeCtx(s), {
