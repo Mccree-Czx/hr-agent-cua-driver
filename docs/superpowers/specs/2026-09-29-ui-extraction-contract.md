@@ -242,6 +242,15 @@ UI 输出形状:
   - `chatlist`: records 4+ 条(name/position/time/last_msg;时间锚含 HH:MM 与"昨天"混合), validated;
   - `search`: 引导卡未出现、已提交搜索、结果页 92 行(条件面板;结果列表渲染待续校准);
 - **残留可优化**: chatlist 末条 records 误抽(last_msg 被当作下一行 name,待时间锚去重)。
+
+### 会话标签轮换机制(2026-09-30 突破之二)
+- **决定性实验(同代码同页面)**:旧标签 hr-agent2 **4/4 全部残缺**(129 refs/24 lines);
+  新标签 hr-rec **4/4 全部完整**(1200 refs/533 named)——**长期复用的旧标签会持续返回残缺快照**;
+- **机制**:`DriverClient.rotateSession()` 派生 `base-rN-<ts>` 新标签并切换;`UiContext.rotateSession` 钩子
+  (withContext 注入:轮换后重新 attach);readPage 每轮残缺失败后自动轮换——旧标签问题一次治愈(测试 121/121);
+- **真机效果**:recommend 快照由持续 24 行恢复完整(轮换自动发生);
+- **残余**:recommend `--with-ids` 穿透时 ref 仍报 superseded(已验证 ref 本身有效,
+  疑为轮换/穿透时序耦合,待续)。
 - **daemon 重启规律(已验证两次)**:`cua-driver stop` + `serve --grant existing-profile` 后**立即执行**的命令可获得完整快照
   (attach 会话行/chatlist 96 行 均命中);已作为"完整快照优先策略"手段:重要读操作前可先重启 daemon。
 
