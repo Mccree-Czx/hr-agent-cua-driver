@@ -38,9 +38,11 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host '[4/4] daemon hint (keep it running):'
-Write-Host "      `"$Exe`" serve --grant existing-profile              # standard mode (attach + reads)"
-Write-Host "      # browser_download additionally needs MCP-host approval; unrestricted alt (attach works, download still gated):"
-Write-Host "      # `"$Exe`" serve --dangerously-bypass-approvals"
+$manifest = Join-Path $PSScriptRoot 'cua-capabilities.yaml'
+Write-Host "      # recommended: capability manifest narrows the approval bypass to Liepin browser work"
+Write-Host "      `"$Exe`" serve --dangerously-bypass-approvals --capability-manifest `"$manifest`" --approve-capability-manifest"
+Write-Host "      # standard alt (attach + reads only; browser_download stays host-gated):"
+Write-Host "      `"$Exe`" serve --grant existing-profile"
 Write-Host '[OK] cua-driver ready. Driver module: tools/cua-liepin-driver (npm run build).'
 Write-Host '     Env for the backend/CLI:'
 Write-Host "       CUA_DRIVER_BIN=$Exe"

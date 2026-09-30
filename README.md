@@ -6,10 +6,11 @@
 
 单机集中式:
 
-- **backend/**:Spring Boot 3 + Java 17 + MyBatis-Plus + MySQL,通过子进程驱动 liepin-cli(Node.js CLI,浏览器自动化)
+- **backend/**:Spring Boot 3 + Java 17 + MyBatis-Plus + MySQL,通过子进程驱动平台通道——
+  liepin-cli(Node.js CLI,浏览器自动化,过渡期)与 **tools/cua-liepin-driver**(CUA 全量替换;
+  经 cua-driver 以真实 UI 操作完成读写/外发/附件,命令级开关灰度、默认关闭)
 - **frontend/**:Vue3 + Element Plus 管理后台(岗位/账号/候选人台账/用户)
-- **tools/cua-liepin-driver/**:UI 驱动适配器(CUA 全量替换计划;经 cua-driver 以真实 UI 操作替代直调接口,默认关闭、命令级开关灰度)
-- **deploy/**:部署脚本(liepin-cli 安装、MinIO、登录态备份、前端构建)
+- **deploy/**:部署脚本(liepin-cli/cua-driver 安装、能力清单、MinIO、登录态备份、前端构建)
 - AI 层:AgentScope Java 框架,底层接国内模型 API(DeepSeek/Qwen/GLM)
 - 简历存储:MinIO 对象存储 + MySQL 元数据(StorageService 抽象,可切本地文件系统)
 - 告警:飞书自定义机器人 webhook(任务失败/账号熔断/登录态失效)
@@ -18,6 +19,8 @@
 
 - JDK 17+、Maven 3.9+、Node.js 20+ / npm、MySQL 8+、Chrome
 - **Chrome 必须为有头模式**(无头 UA 矛盾会被猎聘风控零误报识别,实测导致账号限制)
+- **cua-driver**(UI 通道,Windows):`powershell -File deploy/install-cua-driver.ps1`;
+  daemon 推荐启动方式见脚本输出(能力清单 `deploy/cua-capabilities.yaml` 将审批绕过收窄到猎聘工作面)
 - Docker(可选,MinIO 部署)
 
 ## 快速开始(开发)
