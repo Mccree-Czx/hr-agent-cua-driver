@@ -249,26 +249,62 @@ export interface SearchInput {
 }
 
 /**
- * 搜索页 records 预实现(2026-09-30):搜索页与推荐页同为人卡片组件,复用
- * extractCandidateRecords 与 candidateRowIndexes;
- * resume_id 同 recommend 走预览层「简历编号」穿透(--with-ids);
- * 页面真实结构与姓名节点规则待解锁真机校准(URL 公式同待校准)。
+ * 搜索页 records(2026-09-30 真机校准 v2):
+ * 1) 打开 /search?key=<kw>(关键词由 key 参数预填入搜索框);
+ * 2) 引导卡兜底:若出现"我知道了"则点掉(首次引导一次性);
+ * 3) 点击"搜索"按钮提交(页面不会因 URL 自动执行搜索);
+ * 4) 结果快照 → 候选人 records(与推荐页同构假设,待样本二次校准)。
  */
 export async function runReadSearch(ctx: UiContext, input: SearchInput): Promise<RawPageOutcome> {
   const url = input.pageUrl ?? `https://lpt.liepin.com/search?key=${encodeURIComponent(input.keywords)}`;
-  const outcome = await runReadList(ctx, {
-    pageUrl: url,
-    captureRefs: input.captureRefs,
-    idParam: input.idParam ?? "resIdEncode",
-    dryRun: input.dryRun,
-    label: "搜索页",
-    recordsExtractor: (snap) => extractCandidateRecords(snap),
-    autoCaptureRows: input.withIds === true,
-    autoCaptureRowRefs: (snap) => candidateRowIndexes(snap.refs).map((i) => snap.refs[i].ref),
-    autoCaptureField: "resume_id",
-  });
-  outcome.steps.unshift(`关键词「${input.keywords}」URL 公式待真机校准(本次: ${url})`);
-  return outcome;
+  // 初始快照复用 readPage(自带内容充分性校验+清场重试,抵御语义快照间歇残缺)
+  const first = await readPage(ctx, url);
+  let snap = first.snap;
+
+  // 引导卡兜底("AI 帮搜"首次引导 → 我知道了)
+  const know = snap.refs.find((r) => r.name === "我知道了" && r.actions.includes("click"));
+  if (know !== undefined) {
+    ctx.log("关闭首次引导卡(我知道了)");
+    await clickRef(ctx.client, ctx.session, know.ref);
+    await ctx.sleep(1_500);
+    snap = await takeSnapshot(ctx);
+  }
+
+  // 提交搜索:点"搜索"按钮(精确名;排除导航"搜索人才")
+  let go = snap.refs.find((r) => r.name === "搜索" && (r.role === "button" || r.actions.includes("click")));
+  if (go === undefined) {
+    // 提交按钮未出现在快照中:清场重试一次
+    ctx.log("搜索按钮未出现,清场重试");
+    await navigate(ctx, "about:blank", 800);
+    await ctx.sleep(1_800);
+    const retry = await readPage(ctx, url);
+    snap = retry.snap;
+    go = snap.refs.find((r) => r.name === "搜索" && (r.role === "button" || r.actions.includes("click")));
+  }
+  if (go === undefined) {
+    throw new CuaError("failed", "搜索页未找到提交按钮(页面结构可能变化,请重新校准)");
+  }
+  ctx.log(`提交搜索(关键词「${input.keywords}」)`);
+  await clickRef(ctx.client, ctx.session, go.ref);
+  await ctx.sleep(3_500);
+
+  const result = await takeSnapshot(ctx);
+  checkPageState(result);
+  const lines = textLinesOf(result);
+  const records = extractCandidateRecords(result);
+  return {
+    page_url: result.page.url,
+    count: lines.length,
+    lines,
+    extraction_status: records.length > 0 ? "validated" : "unvalidated",
+    captures: [],
+    records,
+    steps: [
+      `搜索「${input.keywords}」已提交(引导卡${know !== undefined ? "已关闭" : "未出现"})`,
+      `结果页文本行 ${lines.length}`,
+      `结构化记录 ${records.length} 条`,
+    ],
+  };
 }
 
 export interface ChatMsgInput {

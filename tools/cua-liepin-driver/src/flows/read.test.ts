@@ -270,7 +270,7 @@ test("runReadList:autoCaptureRows 逐行穿透并把 job_id 合并进 records(jo
   assert.ok(outcome.steps.some((l) => l.includes("自动穿透 1 行")));
 });
 
-test("runReadSearch:关键词拼 URL + records 复用候选人抽取(预实现,结构待真机校准)", async () => {
+test("runReadSearch:key参数预填→点'搜索'提交→结果 records(2026-09-30 真机校准)", async () => {
   const s = new Scenario();
   const card = [
     { name: "温女士" },
@@ -284,7 +284,9 @@ test("runReadSearch:关键词拼 URL + records 复用候选人抽取(预实现,�
     { name: "15-20K" },
   ];
   s.nav()
-    .snap(card); // 单快照
+    .snap([{ name: "搜索", role: "button", actions: ["click"] }]) // 搜索页(含提交按钮)
+    .click() // 提交搜索
+    .snap(card); // 结果页
 
   const outcome = await runReadSearch(makeCtx(s), { keywords: "海外销售", captureRefs: [], dryRun: false });
 
@@ -293,10 +295,23 @@ test("runReadSearch:关键词拼 URL + records 复用候选人抽取(预实现,�
   assert.equal(records[0].name, "温女士");
   assert.equal(records[0].expect_position, "海外销售");
   assert.equal(outcome.extraction_status, "validated");
-  assert.ok(
-    outcome.steps.some((l) => l.includes("海外销售") && l.includes("URL 公式待真机校准")),
-    "应带 URL 公式校准标记(关键词已编码)",
-  );
+  assert.ok(outcome.steps.some((l) => l.includes("已提交")), "应记录已提交");
+});
+
+test("runReadSearch:引导卡出现时先关闭再提交", async () => {
+  const s = new Scenario();
+  s.nav()
+    .snap([{ name: "我知道了", role: "button", actions: ["click"] }]) // 引导卡
+    .click() // 关闭引导
+    .snap([{ name: "搜索", role: "button", actions: ["click"] }]) // 搜索页
+    .click() // 提交
+    .snap([{ name: "李女士" }, { name: "30岁" }, { name: "5年" }, { name: "硕士" }, { name: "北京" }]);
+
+  const outcome = await runReadSearch(makeCtx(s), { keywords: "测试", captureRefs: [], dryRun: false });
+  const records = outcome.records as Array<Record<string, unknown>>;
+  assert.equal(records.length, 1);
+  assert.equal(records[0].name, "李女士");
+  assert.ok(outcome.steps.some((l) => l.includes("引导卡已关闭")));
 });
 
 test("readPage 语义残缺重试:首次壳(3行)→清场重导航后完整(30行)成功", async () => {
