@@ -865,4 +865,67 @@ class ChatPollServiceTest {
         assertEquals(1, files.size(), "附件应入库");
         verify(commandService).attachFetch(any(), eq(""), eq("温女士"), anyString(), any());
     }
+
+    // ---------- C6:真实 UI records 形态(无 direction/latestMsgId,角标+last_msg 近似) ----------
+
+    @Test
+    void uiChannelUnreadBadgeDrivesDirectionAndAttachmentByLastMsgKey() throws Exception {
+        Jd jd = unconfirmedJd("招聘主管", "88888");
+        Candidate candidate = knownCandidate("", "潘女士");
+        candidate.setJdId(jd.getId());
+        candidateMapper.updateById(candidate);
+        GreetingRecord record = greeting(candidate);
+
+        // 驱动真实输出形态:无 im_id/direction/latestMsgId,有 unread_count 角标与 last_msg
+        stubChatlist("{\"name\":\"潘女士\",\"unread\":true,\"unread_count\":2,"
+                + "\"last_msg\":\"这是我的简历，合适的话可以随时联系我～\"}");
+        Path pdf = writePdf("resume-ui-badge.pdf");
+        when(commandService.attachFetch(any(), eq(""), eq("潘女士"), anyString(), any()))
+                .thenReturn(Optional.of(attachFetchResult(pdf, "潘女士的简历.pdf")));
+
+        int processed = chatPollService.pollOnce(account);
+
+        assertEquals(1, processed, "unread_count>0 应近似 direction=1 并触发附件探测");
+        List<ResumeFile> files = resumeFileMapper.selectList(new LambdaQueryWrapper<ResumeFile>()
+                .eq(ResumeFile::getCandidateId, candidate.getId()));
+        assertEquals(1, files.size(), "附件应入库");
+        assertEquals("这是我的简历，合适的话可以随时联系我～",
+                greetingMapper.selectById(record.getId()).getAttachProbeMsgId(), "防抖键应为 last_msg");
+        verify(commandService).attachFetch(any(), eq(""), eq("潘女士"), anyString(), any());
+    }
+
+    @Test
+    void uiChannelWithoutUnreadBadgeStaysUnknownAndSkips() throws Exception {
+        Candidate candidate = knownCandidate("", "温女士");
+        candidate.setResumeId("r-wen");
+        Jd jd = confirmedJd("测试岗位", "99999");
+        candidate.setJdId(jd.getId());
+        candidateMapper.updateById(candidate);
+        greeting(candidate);
+
+        // 无 direction、无角标(unread_count=0)→ 方向未知,不得触发任何外发(不猜)
+        stubChatlist("{\"name\":\"温女士\",\"unread\":false,\"unread_count\":0,"
+                + "\"last_msg\":\"您好，很高兴认识您\"}");
+
+        int processed = chatPollService.pollOnce(account);
+
+        assertEquals(0, processed, "无角标且无 direction 时不得触发(不猜)");
+        verify(commandService, never()).attachFetch(any(), anyString(), any(), anyString(), any());
+        verify(commandService, never()).requestResume(any(), anyString(), any(), any());
+    }
+
+    @Test
+    void effectiveDirectionAndSessionKeyFallbacks() throws Exception {
+        JsonNode legacy = objectMapper.readTree("{\"im_id\":\"im1\",\"direction\":\"1\"}");
+        assertEquals("im1", ChatPollService.sessionKey(legacy));
+        assertEquals("1", ChatPollService.effectiveDirection(legacy));
+
+        JsonNode ui = objectMapper.readTree("{\"name\":\"温女士\",\"unread_count\":2}");
+        assertEquals("name:温女士", ChatPollService.sessionKey(ui), "UI 通道去重键应带前缀");
+        assertEquals("1", ChatPollService.effectiveDirection(ui), "角标>0 近似对方最后发言");
+
+        JsonNode uiIdle = objectMapper.readTree("{\"name\":\"温女士\",\"unread_count\":0}");
+        assertEquals("", ChatPollService.effectiveDirection(uiIdle), "无角标=未知,不猜");
+        assertEquals("", ChatPollService.sessionKey(objectMapper.readTree("{}")), "无键返回空串");
+    }
 }

@@ -5,6 +5,7 @@ import {
   currentSessionName,
   dedupeConsecutive,
   extractCandidateRecords,
+  extractChatDirection,
   extractChatSessions,
   extractJobRecords,
   extractResumeNo,
@@ -325,12 +326,42 @@ test("extractChatSessions:真机样本(时间锚:名→职位→时间→未读�
     position: "海外ToB渠道销售（出海品牌）",
     time: "17:11",
     unread: true,
+    unread_count: 0,
     last_msg: "你好~我这里有个职位很适合你，待遇优厚，了解一下吗？期待回复！",
   });
   assert.equal(sessions[1].name, "游雅婕");
   assert.equal(sessions[1].position, "招聘服务专员");
   assert.equal(sessions[1].unread, false);
   assert.equal(sessions[1].last_msg, null, "短文本(问 Lily)不得误收为消息首行");
+});
+
+test("extractChatSessions:未读角标计数(superscript→数字;2026-09-30 真机)", () => {
+  const snap = snapRefs([
+    { name: "3" },
+    { name: null, role: "superscript" },
+    { name: "2" },
+    { name: "潘女士" },
+    { name: "海外ToB渠道销售（出海品牌）" },
+    { name: "11:08" },
+    { name: "这是我的简历，合适的话可以随时联系我～" },
+  ]);
+  const sessions = extractChatSessions(snap);
+  assert.equal(sessions.length, 1);
+  assert.equal(sessions[0].name, "潘女士");
+  assert.equal(sessions[0].unread_count, 2, "上标角标数字应为未读计数");
+  assert.equal(sessions[0].unread, true);
+});
+
+test("extractChatSessions:无角标时 unread_count=0(邵女士形态)", () => {
+  const snap = snapRefs([
+    { name: "邵女士" },
+    { name: "海外ToB渠道销售（出海品牌）" },
+    { name: "昨天" },
+    { name: "之前公司主要生产清洁用品和防晒品品类，希望进一步沟通！" },
+  ]);
+  const sessions = extractChatSessions(snap);
+  assert.equal(sessions[0].unread_count, 0);
+  assert.equal(sessions[0].unread, false);
 });
 
 test("extractChatSessions:无时间锚时返回空(不伪造会话)", () => {
@@ -349,6 +380,22 @@ test("extractChatSessions:时间锚支持「昨天」等变体(2026-09-30 真机
   assert.equal(sessions.length, 1);
   assert.equal(sessions[0].name, "邵女士");
   assert.equal(sessions[0].time, "昨天");
+});
+
+test("extractChatSessions:图标按钮名「search」与「新增」标签不得成幻影会话(2026-09-30 真机)", () => {
+  const snap = snapRefs([
+    { name: "不合适" },
+    { name: "search", role: "button" },
+    { name: "search", role: "image" },
+    { name: "未读" },
+    { name: "批量处理" },
+    { name: "收到简历" },
+    { name: "新增" },
+    { name: "3" },
+    { name: "11:08" },
+    { name: "收到了 潘女士、王思又等3人的简历" },
+  ]);
+  assert.equal(extractChatSessions(snap).length, 0, "图标/标签不得拼成幻影会话");
 });
 
 test("extractChatSessions:超长消息与内嵌时间不产生幻影会话(2026-09-30 修复)", () => {
@@ -374,6 +421,94 @@ test("extractChatSessions:通知卡噪声名(新收/3)不产生会话", () => {
   ]);
   const sessions = extractChatSessions(snap);
   assert.equal(sessions.length, 0, "通知卡噪声不得成为会话");
+});
+
+test("extractChatSessions:通知卡徽标不得与真实名字拼成错配记录(2026-09-30 真机残留修复)", () => {
+  // 形态一:组合徽标节点"新收/3"恰在锚前(修复前会被拼成 position)
+  const s1 = snapRefs([
+    { name: "张三" },
+    { name: "新收/3" },
+    { name: "11:08" },
+    { name: "收到了 潘女士、王思张等3人的简历" },
+  ]);
+  assert.equal(extractChatSessions(s1).length, 0, "「新收/3」不得与前面名字拼成会话");
+
+  // 形态二:数字角标"3"单独成节点恰在锚前(修复前会被当作 position)
+  const s2 = snapRefs([
+    { name: "李四" },
+    { name: "新收" },
+    { name: "3" },
+    { name: "11:08" },
+    { name: "收到了 潘女士、王思张等3人的简历" },
+  ]);
+  assert.equal(extractChatSessions(s2).length, 0, "纯数字角标不得作为 position");
+});
+
+test("extractChatDirection:已读锚定——对方最后发言(邵女士形态,2026-09-30 真机)", () => {
+  const snap = snapRefs([
+    { name: "全部职位" },
+    { name: "今天活跃" },
+    { name: "昨天 17:11" },
+    { name: "沟通职位：" },
+    { name: "你好~我这里有一个职位很适合你，待遇优厚，了解一下吗？期待回复！" },
+    { name: "已读" },
+    { name: "您可以修改打招呼语，" },
+    { name: "昨天 17:31" },
+    { name: "您好，简单介绍一下自己，我是计算机本科+华威商分硕士背景。" },
+    { name: "昨天 17:38" },
+    { name: "之前公司主要生产清洁用品和防晒品品类，希望进一步沟通！" },
+  ]);
+  const { direction, opposite_read } = extractChatDirection(snap);
+  assert.equal(direction, "1", "最后消息后无已读→对方最后发言");
+  assert.equal(opposite_read, true);
+});
+
+test("extractChatDirection:已读锚定——我方最后发言(尾部已读)", () => {
+  const snap = snapRefs([
+    { name: "今天活跃" },
+    { name: "您好，很高兴认识您，方便的话可以进一步聊聊岗位细节。" },
+    { name: "已读" },
+    { name: "不错过TA的回复，" },
+  ]);
+  const { direction, opposite_read } = extractChatDirection(snap);
+  assert.equal(direction, "0", "最后消息后有已读→我方最后发言");
+  assert.equal(opposite_read, true);
+});
+
+test("extractChatDirection:无已读——对方最后发言(潘女士形态)", () => {
+  const snap = snapRefs([
+    { name: "今天活跃" },
+    { name: "请问海外ToB渠道销售（出海品牌）职位还在招吗？谢谢！" },
+    { name: "这是我的简历，合适的话可以随时联系我～" },
+    { name: "潘女士的简历" },
+  ]);
+  const { direction, opposite_read } = extractChatDirection(snap);
+  assert.equal(direction, "1");
+  assert.equal(opposite_read, false);
+});
+
+test("extractChatDirection:固定 UI 文案/时间戳/年龄年资不得作消息候选", () => {
+  const snap = snapRefs([
+    { name: "在线沟通", role: "rootwebarea" },
+    { name: "仅支持查看180天以内的会话" },
+    { name: "未选中会话" },
+    { name: "26岁" },
+    { name: "工作2年" },
+    { name: "昨天 17:25" },
+  ]);
+  const { direction } = extractChatDirection(snap);
+  assert.equal(direction, null, "无真实消息时应为 null");
+});
+
+test("extractChatDirection:仅取『在线沟通』rootwebarea 之后(列表文本不得兜底)", () => {
+  const snap = snapRefs([
+    { name: "海外ToB渠道销售（出海品牌）" },
+    { name: "之前公司主要生产清洁用品和防晒品品类，这条不能当作消息" },
+    { name: "在线沟通", role: "rootwebarea" },
+    { name: "今天活跃" },
+  ]);
+  const { direction } = extractChatDirection(snap);
+  assert.equal(direction, null, "根区域后无消息→null,列表文本不得兜底");
 });
 
 test("currentSessionName:详情区特征伴随识别当前会话;无特征返回 null", () => {

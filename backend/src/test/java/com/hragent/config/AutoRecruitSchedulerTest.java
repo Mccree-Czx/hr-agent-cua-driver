@@ -35,6 +35,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
@@ -195,6 +196,16 @@ class AutoRecruitSchedulerTest {
     private JsonNode sessionNode(String imId) {
         try {
             return new ObjectMapper().readTree("{\"im_id\":\"" + imId + "\",\"direction\":\"0\",\"name\":\"候选人\"}");
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** UI 通道会话节点(驱动 records 真实形态:无 im_id,仅 name/角标/最后消息;2026-09-30 C6) */
+    private JsonNode uiSessionNode(String name) {
+        try {
+            return new ObjectMapper().readTree("{\"name\":\"" + name
+                    + "\",\"unread_count\":2,\"last_msg\":\"这是我的简历，合适的话可以随时联系我～\"}");
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
@@ -430,6 +441,44 @@ class AutoRecruitSchedulerTest {
             assertTrue(Duration.between(noOpTimes.get(i - 1), noOpTimes.get(i)).getSeconds() <= 5,
                     "纯记账会话单元应秒级快速通过,不占用平台节拍");
         }
+    }
+
+    // ---------- UI 通道(无 im_id)会话入队/去重(2026-09-30 C6) ----------
+
+    @Test
+    void uiChannelSessionsWithoutImIdAreQueuedAndProcessed() {
+        createAccount();
+        createActiveJd("123");
+        when(chatPollService.fetchSessions(any()))
+                .thenReturn(List.of(uiSessionNode("潘女士"), uiSessionNode("王思又")));
+        List<String> handled = new ArrayList<>();
+        when(chatPollService.handleSession(any(), any())).thenAnswer(inv -> {
+            JsonNode session = inv.getArgument(1);
+            handled.add(session.path("name").asText(""));
+            return false;
+        });
+
+        scheduler.runRound(WORK_TIME);
+
+        assertEquals(List.of("潘女士", "王思又"), handled, "UI 会话(无 im_id)应按会话名键入队并处理");
+        verify(chatPollService, times(2)).handleSession(any(), any());
+    }
+
+    @Test
+    void uiChannelSessionDedupedByNameKeyAcrossListRefreshes() {
+        createAccount();
+        createActiveJd("123");
+        properties.getAutoRecruit().setPollListIntervalMinutes(15);
+        when(chatPollService.fetchSessions(any())).thenReturn(List.of(uiSessionNode("潘女士")));
+        AtomicInteger handled = new AtomicInteger();
+        when(chatPollService.handleSession(any(), any())).thenAnswer(inv -> {
+            handled.incrementAndGet();
+            return false;
+        });
+
+        scheduler.runRound(WORK_TIME);
+
+        assertEquals(1, handled.get(), "同一 UI 会话(无 im_id)多次列表刷新后只应处理一次");
     }
 
     @Test

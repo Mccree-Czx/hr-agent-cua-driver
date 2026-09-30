@@ -10,6 +10,7 @@ import { CuaError } from "../contract.js";
 import {
   candidateRowIndexes,
   extractCandidateRecords,
+  extractChatDirection,
   extractResumeNo,
   hasAttachmentHint,
   jobRowIndexes,
@@ -41,6 +42,8 @@ export interface RawPageOutcome {
   attachment_hint?: boolean;
   /** 会话级"对方已读我方最新消息"信号(chatmsg;2026-09-30 真机:消息流含独立"已读"行) */
   opposite_read?: boolean;
+  /** 最后发言方判定(chatmsg;2026-09-30 真机"已读锚定法"):"1"=对方最后发言 / "0"=我方最后发言 / null=未识别 */
+  direction?: "0" | "1" | null;
   steps: string[];
 }
 
@@ -420,6 +423,7 @@ export function findConversationRow(refs: SnapshotRef[], name: string): Snapshot
 export async function runReadChatMsg(ctx: UiContext, input: ChatMsgInput): Promise<RawPageOutcome> {
   const steps: string[] = [];
   let lines: string[];
+  let msgSnap: SnapshotResult;
 
   if (input.name !== undefined && input.name !== "") {
     // 与 attach 同款:清场前置+单快照+残缺重试+标签轮换(2026-09-30 会话名键统一)
@@ -449,10 +453,12 @@ export async function runReadChatMsg(ctx: UiContext, input: ChatMsgInput): Promi
       await clickRef(ctx.client, ctx.session, row.ref);
       await ctx.sleep(2_000);
     }
-    lines = textLinesOf(await takeSnapshot(ctx));
+    msgSnap = await takeSnapshot(ctx);
+    lines = textLinesOf(msgSnap);
     steps.push(`会话消息文本行 ${lines.length}`);
   } else {
     const result = await readPage(ctx, input.pageUrl);
+    msgSnap = result.snap;
     lines = result.lines;
     steps.push(`会话页文本行 ${lines.length}`);
   }
@@ -464,11 +470,15 @@ export async function runReadChatMsg(ctx: UiContext, input: ChatMsgInput): Promi
   if (attachment) {
     steps.push("检测到附件卡片文案迹象(简历/附件)");
   }
-  // 2026-09-30 真机对齐 ChatPollService.oppositeRead:消息流出现独立"已读"行
-  // (我方消息尾部标记)即视为"对方已读我方最新消息"
-  const oppositeRead = lines.some((l) => l.trim() === "已读");
+  // 2026-09-30 真机"已读锚定法"(extractChatDirection):
+  // 最后一条消息之后出现"已读"⇔ 我方最后发言(已被读);否则对方最后发言。
+  // opposite_read 保留原语义(任一已读标记 = 对方已读我方消息)。
+  const { direction, opposite_read: oppositeRead } = extractChatDirection(msgSnap);
   if (oppositeRead) {
-    steps.push("检测到\"已读\"标记(对方已读我方最新消息)");
+    steps.push("检测到\"已读\"标记(对方已读我方消息)");
+  }
+  if (direction !== null) {
+    steps.push(`方向判定 direction=${direction}(${direction === "1" ? "对方最后发言" : "我方最后发言"})`);
   }
   return {
     page_url: input.pageUrl,
@@ -478,6 +488,7 @@ export async function runReadChatMsg(ctx: UiContext, input: ChatMsgInput): Promi
     captures: [],
     attachment_hint: attachment,
     opposite_read: oppositeRead,
+    direction,
     steps,
   };
 }

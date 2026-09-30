@@ -415,8 +415,9 @@ public class AutoRecruitScheduler {
                 List<JsonNode> sessions = fetched.get();
                 if (sessions != null) {
                     for (JsonNode session : sessions) {
-                        String imId = session.path("im_id").asText("");
-                        if (imId.isEmpty() || work.processedSessions.contains(imId)) {
+                        // 去重键(2026-09-30 C6):legacy 用 im_id;UI 通道 records 无 im_id,回退 "name:<会话名>"
+                        String key = ChatPollService.sessionKey(session);
+                        if (key.isEmpty() || work.processedSessions.contains(key)) {
                             continue;
                         }
                         work.pendingSessions.addLast(session);
@@ -430,9 +431,9 @@ public class AutoRecruitScheduler {
                 if (result == ActionResult.ABORTED) {
                     return false;
                 }
-                String imId = unit.session.path("im_id").asText("");
-                if (!imId.isEmpty()) {
-                    work.processedSessions.add(imId);
+                String key = ChatPollService.sessionKey(unit.session);
+                if (!key.isEmpty()) {
+                    work.processedSessions.add(key);
                 }
                 if (acted.get()) {
                     stats.polled++;
@@ -738,7 +739,7 @@ public class AutoRecruitScheduler {
         private int openUnits() {
             int count = 0;
             for (JsonNode session : pendingSessions) {
-                if ("1".equals(session.path("direction").asText(""))) {
+                if ("1".equals(ChatPollService.effectiveDirection(session))) {
                     count++;
                 }
             }

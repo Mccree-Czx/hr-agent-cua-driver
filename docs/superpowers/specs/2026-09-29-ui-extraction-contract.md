@@ -307,3 +307,27 @@ UI 输出形状:
   **仍被宿主层审批拦截**(与 daemon 权限模式无关,属"MCP 宿主"层的破坏性工具确认设计);
 - **结论**:下载放行需宿主层审批配置(待研究 capability-manifest 格式/宿主审批接口);
   attach 其余全链路(会话行定位→点开会话→附件卡片检出→目录基线→下载触发)已真机验证可达下载点。
+
+### direction/oppositeRead/unread_count 判定与后端消费(2026-09-30 晚,C6 完成)
+- **样本(两形态互补,真机)**:
+  - 邵女士(我方2条招呼均被读+对方2条回复):消息时间线("昨天 17:11"等时间戳)+ "已读"标记(紧跟**我方**消息);
+  - 潘女士(全对方消息:问职位+发简历;我方未发过):时间线**无**"已读";
+- **已读锚定法**(驱动 `extractChatDirection`,已实现+真机验证):"已读"只挂我方消息后 →
+  **最后一条消息之后出现"已读" ⇔ 我方最后发言(direction=0)**;否则 **对方最后发言(direction=1)**;
+  范围=仅取最后一个"在线沟通" rootwebarea 之后;消息候选=statictext+长度≥5+排除时间戳/
+  固定文案('仅支持查看180天以内的会话'/'您可以修改打招呼语，'/'不错过TA的回复，'/年龄年资格式);
+  真机:潘女士 `direction=1, opposite_read=false`(附件迹象=true);邵女士 `direction=1, opposite_read=true`;
+  已知盲区:我方最后发言且对方未读→无锚定,保守判 1(多一次附件探测,防抖收敛);
+- **chatlist 未读角标 unread_count**(驱动已实现):真机结构=superscript 容器→纯数字(会话名前6节点内);
+  真机:王思又=2/埃德加=1/潘女士=0(被 chatmsg 打开会话读掉);"打开会话即已读"自洽——
+  无人值守场景 unread_count>0 ≈ "存在尚未处理过的对方新消息";
+- **幻影会话彻底清除**(chatlist records 5/5 真实):button/image 的 name(如 "search")不作名字/职位;
+  通知卡真机标签为"**新增**"(已并入噪声词);纯数字角标行不作名字/职位;
+- **后端消费适配(2026-09-30,驱动127→135/后端314→319 全绿)**:
+  - `ChatPollService.effectiveDirection`:direction 缺失时 unread_count>0 近似 "1"(无角标=未知,不猜);
+  - `ChatPollService.sessionKey`:去重键=im_id 或 "name:<会话名>";`AutoRecruitScheduler` 入队/去重同步适配
+    (否则 UI 通道无 im_id 会话会被全部跳过——轮询空转);
+  - `fetchAttachmentIfNew`:无 `raw_metadata.latestMsgId` 时以 `last_msg` 作防抖键(内容稳定;时间戳漂移不参与);
+  - `ResumeCollectService.checkReply` 同步走 effectiveDirection;测试 +5(真实 UI records 形态驱动附件链路/
+    无角标不触发/键回退;调度入队/跨刷新去重);
+- **待续**:`chatmsg --name` 的 direction/opposite_read 与后端两阶段(粗筛+精判)的进一步接线(观察期数据评估)。

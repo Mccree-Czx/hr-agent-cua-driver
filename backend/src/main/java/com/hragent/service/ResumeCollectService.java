@@ -154,8 +154,9 @@ public class ResumeCollectService {
             if (!samePerson) {
                 continue;
             }
-            // 实测:direction=1 为候选人发来的消息(如回复),direction=0 为我方/平台发出
-            if ("1".equals(chat.path("direction").asText(""))) {
+            // 实测:direction=1 为候选人发来的消息(如回复),direction=0 为我方/平台发出;
+            // UI 通道 records 无 direction,以 unread_count 角标近似(ChatPollService.effectiveDirection)
+            if ("1".equals(ChatPollService.effectiveDirection(chat))) {
                 return true;
             }
         }

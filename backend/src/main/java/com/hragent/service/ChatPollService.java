@@ -258,6 +258,37 @@ public class ChatPollService {
         }
     }
 
+    /**
+     * 会话去重键(2026-09-30 C6 调度防重适配):legacy 通道用 im_id;
+     * UI 通道 records 无 im_id,以 "name:&lt;会话名&gt;" 作替代键(前缀区分,不与数字 im_id 冲突)。
+     * 返回空串 = 无可用键(调用方跳过,不猜测)。
+     */
+    public static String sessionKey(JsonNode session) {
+        String imId = session.path("im_id").asText("").trim();
+        if (!imId.isEmpty()) {
+            return imId;
+        }
+        String name = session.path("name").asText("").trim();
+        return name.isEmpty() ? "" : "name:" + name;
+    }
+
+    /**
+     * 有效方向判定(2026-09-30 C6 UI 通道适配):legacy 通道取 records.direction;
+     * UI 通道 records 无 direction,以未读角标近似——unread_count&gt;0 ⇒ 对方最后发言("1")。
+     *
+     * <p>依据:chatlist UI 的未读角标只在"对方新消息未读"时出现;无人值守机器人场景下
+     * "打开会话即已读"(attach-fetch/chatmsg 打开会话会清掉角标),故 unread_count&gt;0 ≈
+     * "存在尚未处理的对方新消息",等价旧通道 direction=1 的触发语义。
+     * 无 direction 且无角标时返回空串(未知,不猜;精确判定由驱动 chatmsg 已读锚定法提供)。
+     */
+    public static String effectiveDirection(JsonNode session) {
+        String direction = session.path("direction").asText("");
+        if (!direction.isEmpty()) {
+            return direction;
+        }
+        return session.path("unread_count").asInt(0) > 0 ? "1" : "";
+    }
+
     /** 处理单个会话;返回是否已产生落库/外发动作 */
     private boolean handleSession(LiepinAccount account, JsonNode session, Duration timeout) {
         String imId = session.path("im_id").asText("").trim();
@@ -266,7 +297,7 @@ public class ChatPollService {
             log.warn("会话缺少 im_id 与 name,跳过(不猜测)");
             return false;
         }
-        String direction = session.path("direction").asText("");
+        String direction = effectiveDirection(session);
         // 已知候选人匹配:优先 im_id → user_id → name(UI 通道无 im_id 时的会话名键回退)
         Candidate candidate = imId.isEmpty() ? null : findCandidateByImId(imId);
         if (candidate == null) {
@@ -342,6 +373,11 @@ public class ChatPollService {
                 .eq(GreetingRecord::getCandidateId, candidate.getId())
                 .last("LIMIT 1"));
         String latestMsgId = session.path("raw_metadata").path("latestMsgId").asText("").trim();
+        if (latestMsgId.isEmpty()) {
+            // UI 通道适配(2026-09-30 C6):records 无消息 id,以"最后消息文本"作防抖键
+            // (内容稳定;时间戳会漂移不参与。重复探测代价可控:attach-fetch 只读+幂等。)
+            latestMsgId = session.path("last_msg").asText("").trim();
+        }
         if (record == null || latestMsgId.isEmpty() || latestMsgId.equals(record.getAttachProbeMsgId())) {
             return false;
         }

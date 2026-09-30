@@ -264,31 +264,54 @@ export interface ChatSessionRecord {
   position: string | null;
   time: string | null;
   unread: boolean;
+  /** 未读消息数(列表上标角标;2026-09-30 真机:名字前 superscript 内纯数字,0=无) */
+  unread_count?: number;
   last_msg: string | null;
 }
 
 /** 会话行时间锚(真机观察多种格式:HH:MM / 昨天 / 前天 / N天前 / MM-DD) */
 const CHAT_TIME_RE = /^(\d{1,2}:\d{2}|昨天|前天|\d+天前|\d{1,2}-\d{1,2})$/;
 
-/** 会话行噪声词(非会话名:通知卡/筛选项等) */
-const CHAT_NAME_NOISE = /^(新收|新招呼|未读|全部|批量处理|收到简历)$/;
+/** 会话行噪声词(非会话名:通知卡/筛选项等;容错尾部数字徽标,如"新增 3";"新收"为观察别名) */
+const CHAT_NAME_NOISE = /^(新收|新增|新招呼|未读|全部|批量处理|收到简历)([/·|\s]*\d+)?$/;
 
-/** 从 refs[from] 向前收集最多 max 个非空名称(span 限制搜索深度);
- * 2026-09-30 真机校准:跳过超长文本(消息体,>30)、时间样式文本与噪声词,避免"幻影会话名";
+/** 纯数字徽标行(未读角标等,不得作为名字/职位;2026-09-30 真机"新收/3"残留) */
+const CHAT_COUNT_RE = /^\d{1,4}$/;
+
+/** 从 refs[from] 向前收集最多 max 个非空名称(span 限制搜索深度)及其下标;
+ * 2026-09-30 真机校准:跳过超长文本(消息体,>30)、时间样式文本、噪声词与纯数字徽标,避免"幻影会话名";
  */
-function backNames(refs: SnapshotRef[], from: number, max: number, span: number): string[] {
-  const out: string[] = [];
+function backNames(refs: SnapshotRef[], from: number, max: number, span: number): Array<{ text: string; idx: number }> {
+  const out: Array<{ text: string; idx: number }> = [];
   for (let i = from; i >= Math.max(0, from - span) && out.length < max; i--) {
     const n = refs[i].name;
     if (n !== null && n.trim() !== "") {
       const t = n.trim();
-      if (t.length > 30 || CHAT_TIME_RE.test(t) || CHAT_NAME_NOISE.test(t)) {
+      const role = refs[i].role;
+      // button/image 的 name 是图标/控件名(如 "search"),不得作为名字/职位(2026-09-30 真机)
+      if (role === "button" || role === "image") {
         continue;
       }
-      out.push(t);
+      if (t.length > 30 || CHAT_TIME_RE.test(t) || CHAT_NAME_NOISE.test(t) || CHAT_COUNT_RE.test(t)) {
+        continue;
+      }
+      out.push({ text: t, idx: i });
     }
   }
   return out;
+}
+
+/** 会话名前的未读角标计数(2026-09-30 真机结构:superscript 容器 → 纯数字 statictext,
+ * 如 i=89 superscript / i=90 "2";数字位于名字前 6 个节点内)。
+ */
+function unreadCountBefore(refs: SnapshotRef[], nameIdx: number): number {
+  for (let k = nameIdx - 1; k >= Math.max(0, nameIdx - 6); k--) {
+    const t = refs[k].name?.trim() ?? "";
+    if (/^\d{1,2}$/.test(t) && k - 1 >= 0 && refs[k - 1].role === "superscript") {
+      return Number.parseInt(t, 10);
+    }
+  }
+  return 0;
 }
 
 /**
@@ -309,11 +332,12 @@ export function extractChatSessions(snap: SnapshotResult): ChatSessionRecord[] {
     if (back.length < 2) {
       return;
     }
-    if (seen.has(back[1])) {
+    if (seen.has(back[1].text)) {
       return; // 同一会话名已存在(如消息体内嵌时间文本导致的重复锚)
     }
-    seen.add(back[1]);
-    let unread = false;
+    seen.add(back[1].text);
+    const unreadCount = unreadCountBefore(refs, back[1].idx);
+    let unread = unreadCount > 0;
     let lastMsg: string | null = null;
     for (let j = i + 1; j < Math.min(refs.length, i + 8); j++) {
       const n = refs[j].name;
@@ -329,7 +353,14 @@ export function extractChatSessions(snap: SnapshotResult): ChatSessionRecord[] {
         lastMsg = text;
       }
     }
-    out.push({ name: back[1], position: back[0], time: r.name.trim(), unread, last_msg: lastMsg });
+    out.push({
+      name: back[1].text,
+      position: back[0].text,
+      time: r.name.trim(),
+      unread,
+      unread_count: unreadCount,
+      last_msg: lastMsg,
+    });
   });
   return out;
 }
@@ -359,6 +390,70 @@ export function currentSessionName(snap: SnapshotResult): string | null {
     }
   }
   return null;
+}
+
+/** 会话页固定 UI 文案/广告提示(不得作为消息候选;2026-09-30 邵女士/潘女士真机样本) */
+const MSG_UI_NOISE = new Set([
+  "仅支持查看180天以内的会话", "未选中会话", "全部职位", "今天活跃",
+  "离职，正在找工作", "在职，急寻新工作", "沟通职位:", "沟通职位：", "求职期望:",
+  "您可以修改打招呼语，", "不错过TA的回复，", "开启微信通知", "人选极速回复",
+  "在线简历", "附件简历", "超级聊聊", "手机号", "索要微信", "看简历", "约面试",
+  "不合适", "发送", "问 Lily", "我的专属顾问",
+]);
+
+/** 消息区时间戳(可带日期前缀:"昨天 17:11" / 纯 "11:08";不得作为消息) */
+const MSG_TIME_RE = /^((今天|昨天|前天|\d+天前)\s*)?\d{1,2}:\d{2}$/;
+
+/**
+ * 会话消息方向判定(2026-09-30 真机"已读锚定法";C6:对齐后端 direction/oppositeRead)。
+ *
+ * 真机样本(邵女士:我方2条招呼已被读;潘女士:全对方消息无已读):
+ * - "已读"标记只出现在我方消息之后(对方已读我方消息);对方消息无任何方向标记;
+ * - 故:最后一条消息之后出现"已读"⇔ 最后一条是我方消息且已被读(我方最后发言);
+ * - 否则 ⇔ 对方最后发言(此时已读标记均在最后消息之前或无)。
+ *
+ * 返回 direction:"1"=对方最后发言(候选人新话) / "0"=我方最后发言 / null=未识别到消息。
+ * 已知盲区:我方最后发言且对方未读时,无"已读"锚定 → 误判为 "1"(保守方向:多探测一次附件,防抖可收敛)。
+ * 范围限定:仅在最后一个 "在线沟通" rootwebarea 之后取材(避开会话列表/右侧详情面板噪声)。
+ */
+export function extractChatDirection(snap: SnapshotResult): { direction: "0" | "1" | null; opposite_read: boolean } {
+  const refs = snap.refs;
+  let start = 0;
+  for (let i = refs.length - 1; i >= 0; i--) {
+    if (refs[i].role === "rootwebarea" && (refs[i].name ?? "").includes("在线沟通")) {
+      start = i + 1;
+      break;
+    }
+  }
+  let lastMsg = -1;
+  const reads: number[] = [];
+  for (let i = start; i < refs.length; i++) {
+    const raw = refs[i].name;
+    if (raw === null || raw.trim() === "") {
+      continue;
+    }
+    const t = raw.trim();
+    if (t === "已读") {
+      reads.push(i);
+      continue;
+    }
+    if (refs[i].role !== "statictext") {
+      continue;
+    }
+    if (t.length < 5 || MSG_TIME_RE.test(t) || MSG_UI_NOISE.has(t)) {
+      continue;
+    }
+    if (/^\d{1,2}岁$/.test(t) || /^工作\d+年$/.test(t)) {
+      continue;
+    }
+    lastMsg = i;
+  }
+  const oppositeRead = reads.length > 0;
+  if (lastMsg < 0) {
+    return { direction: null, opposite_read: oppositeRead };
+  }
+  const readAfter = reads.some((r) => r > lastMsg);
+  return { direction: readAfter ? "0" : "1", opposite_read: oppositeRead };
 }
 
 /** 附件卡片文案迹象(chatmsg 附件检测;旧 API 路线需解 bizType=7 载荷,UI 更直观) */
