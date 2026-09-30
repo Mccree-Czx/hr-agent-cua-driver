@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   collectLines,
+  currentSessionName,
   dedupeConsecutive,
   extractCandidateRecords,
   extractChatSessions,
@@ -306,6 +307,14 @@ test("extractChatSessions:时间锚支持「昨天」等变体(2026-09-30 真机
   assert.equal(sessions.length, 1);
   assert.equal(sessions[0].name, "邵女士");
   assert.equal(sessions[0].time, "昨天");
+});
+
+test("currentSessionName:详情区特征伴随识别当前会话;无特征返回 null", () => {
+  const withDetail = snapRefs([{ name: "人才推荐" }, { name: "邵女士" }, { name: "26岁" }, { name: "硕士" }]);
+  assert.equal(currentSessionName(withDetail), "邵女士");
+
+  const noDetail = snapRefs([{ name: "邵女士" }, { name: "人才推荐" }]);
+  assert.equal(currentSessionName(noDetail), null, "无年龄/学历/期望特征不得误判");
 });
 
 test("hasAttachmentHint:简历/附件卡片文案", () => {

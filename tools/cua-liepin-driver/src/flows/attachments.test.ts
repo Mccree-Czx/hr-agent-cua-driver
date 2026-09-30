@@ -46,6 +46,22 @@ test("findAttachmentRef:文件名样式优先,其次简历/附件文案;均需�
   assert.equal(findAttachmentRef(snap([{ name: "在线简历" }, { name: "查看附件", actions: ["click"] }]))?.name, "查看附件");
   assert.equal(findAttachmentRef(snap([{ name: "张三的简历.pdf" }])), null, "无 click 动作时不应命中");
   assert.equal(findAttachmentRef(snap([{ name: "你好" }, { name: "在吗" }])), null);
+  // 2026-09-30 真机:会话页 UI 词不得误报(筛选项/工具栏)
+  assert.equal(
+    findAttachmentRef(snap([{ name: "有简历", actions: ["click"] }])),
+    null,
+    "筛选 tab「有简历」不得误当附件卡片",
+  );
+  assert.equal(
+    findAttachmentRef(snap([{ name: "浏览简历", actions: ["click"] }])),
+    null,
+    "工具栏「浏览简历」不得误当附件卡片",
+  );
+  assert.equal(
+    findAttachmentRef(snap([{ name: "收到简历", actions: ["click"] }])),
+    null,
+    "投递通知区「收到简历」不得误当附件卡片",
+  );
 });
 
 test("validateResumeFile:有效 PDF 返回 bytes/sha256;空文件与非 PDF 拒绝", () => {
@@ -360,6 +376,32 @@ test("attach-fetch --name 会话名键模式:导航会话页→点开会话→�
   }
 });
 
+test("attach --name 降级通道:列表不可用但目标会话已打开时继续附件检出", async () => {
+  const s = new Scenario();
+  const outDir = tempDir();
+  const url = "https://lpt.liepin.com/chat/im";
+  try {
+    for (let i = 0; i < 6; i++) {
+      s.nav(url).snap(["其他人"], CHAT_URL, true); // 列表快照始终不含会话行
+      if (i < 5) {
+        s.push({ tool: "browser_navigate", payload: {} }); // about:blank 清场
+      }
+    }
+    // 降级检查:右侧详情区含目标名(特征伴随 26岁/硕士)
+    s.snap(["邵女士", "26岁", "硕士"], CHAT_URL, true)
+      .snap(["邵越-中文简历.pdf"], CHAT_URL, true); // 附件检出快照
+    s.download(() => writeFileSync(join(outDir, "邵越-中文简历.pdf"), PDF_BYTES));
+
+    const outcome = await runAttachFetchUi(makeCtx(s), { name: "邵女士", outDir, dryRun: false });
+
+    assert.equal(outcome.success, true);
+    assert.equal(outcome.fileName, "邵越-中文简历.pdf");
+    assert.ok(outcome.steps.some((l) => l.includes("降级通道")), "应标记降级通道");
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
 test("attach --name 会话未找到时报明确错误(清场重试 6 次后放弃)", async () => {
   const s = new Scenario();
   const outDir = tempDir();
@@ -371,6 +413,7 @@ test("attach --name 会话未找到时报明确错误(清场重试 6 次后放�
         s.push({ tool: "browser_navigate", payload: {} }); // about:blank 清场(裸导航)
       }
     }
+    s.snap(["其他人"], CHAT_URL, true); // 降级检查:当前会话名(无详情特征)
 
     await assert.rejects(
       runAttachFetchUi(makeCtx(s), { name: "邵女士", outDir, dryRun: false }),

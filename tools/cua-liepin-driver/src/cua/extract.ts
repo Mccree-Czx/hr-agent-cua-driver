@@ -317,6 +317,33 @@ export function extractChatSessions(snap: SnapshotResult): ChatSessionRecord[] {
   return out;
 }
 
+/**
+ * 当前已打开会话的候选人名(降级通道,2026-09-30)。
+ * 背景:左侧会话列表(虚拟滚动容器)不进 semantic_v2 快照,无法按列表定位;
+ * 但右侧详情区含当前会话名(隐私名样式 X女士/X先生),附近伴随年龄/学历/期望等特征。
+ * 滚动/重渲染/视觉解析三路均不可用(后两者被 AGPL 策略排除/无效)。
+ */
+export function currentSessionName(snap: SnapshotResult): string | null {
+  const refs = snap.refs;
+  for (let i = 0; i < refs.length; i++) {
+    const raw = refs[i].name;
+    if (raw === null) {
+      continue;
+    }
+    const name = raw.trim();
+    if (!CANDIDATE_NAME_RE.test(name)) {
+      continue;
+    }
+    const around = refs
+      .slice(Math.max(0, i - 40), Math.min(refs.length, i + 40))
+      .map((r) => r.name ?? "");
+    if (around.some((v) => /岁$|年$|本科|硕士|大专|博士|期望/.test(v))) {
+      return name;
+    }
+  }
+  return null;
+}
+
 /** 附件卡片文案迹象(chatmsg 附件检测;旧 API 路线需解 bizType=7 载荷,UI 更直观) */
 export function hasAttachmentHint(lines: string[]): boolean {
   return lines.some((l) => /简历|附件/.test(l) && /\.(pdf|docx?|doc)|附件|简历/.test(l));

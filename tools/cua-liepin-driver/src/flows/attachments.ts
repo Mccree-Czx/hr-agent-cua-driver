@@ -14,6 +14,7 @@
  */
 
 import { CuaError } from "../contract.js";
+import { currentSessionName } from "../cua/extract.js";
 import { clickRef, type SnapshotResult } from "../cua/session.js";
 import {
   ensureAbsoluteDir,
@@ -39,7 +40,9 @@ export interface AttachOutcome {
   steps: string[];
 }
 
-/** 附件卡片候选:文件名样式优先,其次"简历/附件"文案的可点击节点 */
+/** 附件卡片候选:文件名样式优先,其次"简历/附件"文案的可点击节点;
+ * 2026-09-30 真机:排除会话页 UI 词(筛选 tab"有简历"/工具栏"浏览简历"等),避免误报
+ */
 export function findAttachmentRef(snap: SnapshotResult): { ref: string; name: string } | null {
   const fileish = snap.refs.find(
     (r) => r.name !== null && /\.(pdf|docx?|doc)\b/i.test(r.name) && r.actions.includes("click"),
@@ -48,7 +51,11 @@ export function findAttachmentRef(snap: SnapshotResult): { ref: string; name: st
     return { ref: fileish.ref, name: fileish.name as string };
   }
   const hint = snap.refs.find(
-    (r) => r.name !== null && /简历|附件/.test(r.name) && r.actions.includes("click"),
+    (r) =>
+      r.name !== null &&
+      /简历|附件/.test(r.name) &&
+      !/^(有简历|浏览简历|通过筛选|不合适|超级聊聊|在线简历|收到简历)$/.test(r.name.trim()) &&
+      r.actions.includes("click"),
   );
   if (hint !== null && hint !== undefined) {
     return { ref: hint.ref, name: hint.name as string };
@@ -97,12 +104,23 @@ export async function runAttachCore(ctx: UiContext, input: AttachInput): Promise
       }
     }
     if (row === null) {
-      throw new CuaError("failed", `会话列表中未找到「${input.name}」(附件检出按名定位失败,已重试 ${PAGE_RETRY_ATTEMPTS} 次)`);
-    }
-    note(`会话行 ${row.ref}「${row.name ?? ""}」`);
-    if (!input.dryRun) {
-      await clickRef(ctx.client, ctx.session, row.ref);
-      await ctx.sleep(2_000);
+      // 降级通道(2026-09-30):左侧列表不进语义树;若目标会话已打开(右侧详情区含名字),继续附件检出
+      const opened = currentSessionName(await takeSnapshot(ctx));
+      if (opened === input.name) {
+        note(`左侧列表不可用,但当前已打开「${opened}」会话,继续附件检出(降级通道)`);
+      } else {
+        throw new CuaError(
+          "failed",
+          `会话列表中未找到「${input.name}」(已重试 ${PAGE_RETRY_ATTEMPTS} 次;` +
+            `左侧列表受虚拟滚动容器限制;当前打开会话=${opened ?? "未知"})`,
+        );
+      }
+    } else {
+      note(`会话行 ${row.ref}「${row.name ?? ""}」`);
+      if (!input.dryRun) {
+        await clickRef(ctx.client, ctx.session, row.ref);
+        await ctx.sleep(2_000);
+      }
     }
   } else {
     if (input.pageUrl === undefined || input.pageUrl === "") {
