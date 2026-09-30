@@ -338,11 +338,6 @@ public class ChatPollService {
      */
     private boolean fetchAttachmentIfNew(LiepinAccount account, Candidate candidate, String imId,
                                          JsonNode session, Duration timeout) {
-        if (imId.isEmpty()) {
-            // UI 通道适配:无 im_id 时附件探测(attach-fetch UI 化)尚未就绪,跳过并留痕
-            log.info("UI 通道无 im_id,附件探测暂不可用,跳过(候选人 {})", candidate.getId());
-            return false;
-        }
         GreetingRecord record = greetingMapper.selectOne(new LambdaQueryWrapper<GreetingRecord>()
                 .eq(GreetingRecord::getCandidateId, candidate.getId())
                 .last("LIMIT 1"));
@@ -350,7 +345,10 @@ public class ChatPollService {
         if (record == null || latestMsgId.isEmpty() || latestMsgId.equals(record.getAttachProbeMsgId())) {
             return false;
         }
-        Optional<JsonNode> result = commandService.attachFetch(account, imId, attachWorkDir(), timeout);
+        // UI 通道适配(2026-09-30):无 im_id 时由 attach-fetch 按会话名定位(会话名键);
+        // 无键时 attachFetch 内部空返回(守卫下沉),此处不猜测
+        String sessionName = session.path("name").asText("").trim();
+        Optional<JsonNode> result = commandService.attachFetch(account, imId, sessionName, attachWorkDir(), timeout);
         JsonNode node = result.orElse(null);
         if (node == null) {
             log.warn("附件获取无输出,下轮重试(候选人 {})", candidate.getId());

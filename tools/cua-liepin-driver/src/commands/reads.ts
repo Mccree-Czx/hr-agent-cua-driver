@@ -12,8 +12,8 @@ import { extractChatSessions, extractJobRecords } from "../cua/extract.js";
 import {
   runReadChatMsg,
   runReadList,
-  runReadPageGeneric,
   runReadRecommend,
+  runReadSearch,
   type RawPageOutcome,
 } from "../flows/read-pages.js";
 import { runReadResume } from "../flows/read-resume.js";
@@ -64,14 +64,25 @@ export async function handleRecommend(cfg: DriverConfig, args: ParsedArgs): Prom
   });
 }
 
-/** search --url <页面> [--json] */
+/** search <keywords> [--url <页面>] [--with-ids] [--capture-ids --ref <pN:M> ...] [--id-param resIdEncode] [--dry-run] [--json]
+ * --with-ids: 自动逐卡穿透取 resume_id(与 recommend 同通道);rules 预实现,页面结构待真机校准 */
 export async function handleSearch(cfg: DriverConfig, args: ParsedArgs): Promise<number> {
-  const url = requireUrl(args, "search", "人才搜索页");
-  if (url === null) {
+  const keywords = args.positional[0] ?? "";
+  const pageUrl = flagValue(args, "url") ?? undefined;
+  if (keywords === "" && pageUrl === undefined) {
+    console.error("search:需要 <keywords> 位置参数,或 --url <完整搜索页 URL>(联调期可直给 URL)");
+    return 1;
+  }
+  const idParam = flagValue(args, "id-param") ?? undefined;
+  const withIds = args.flags["with-ids"] === true;
+  const captureRefs = args.flags["capture-ids"] === true ? (args.multi.ref ?? []) : [];
+  const dryRun = args.flags["dry-run"] === true;
+  if (args.flags["capture-ids"] === true && captureRefs.length === 0) {
+    console.error("search:--capture-ids 需要至少一个 --ref <pN:M>(联调期原语)");
     return 1;
   }
   return withContext(cfg, args, async (ctx) => {
-    printRaw(await runReadPageGeneric(ctx, url, "搜索页"));
+    printRaw(await runReadSearch(ctx, { keywords, pageUrl, captureRefs, idParam, dryRun, withIds }));
   });
 }
 

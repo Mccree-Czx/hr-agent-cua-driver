@@ -324,3 +324,52 @@ test("attach-download 成功路径输出 success 形态", async () => {
     rmSync(outDir, { recursive: true, force: true });
   }
 });
+
+test("attach-fetch --name 会话名键模式:导航会话页→点开会话→检出附件→下载校验", async () => {
+  const s = new Scenario();
+  const outDir = tempDir();
+  try {
+    s.nav("https://lpt.liepin.com/chat/im") // navigateChecked:导航 + checkPageState 快照
+      .snap(["邵女士"], CHAT_URL, true) // 会话列表(会话行可点击)
+      .push({ tool: "browser_click", payload: {} }) // 点开会话
+      .snap(["邵越-中文简历.pdf"], CHAT_URL, true); // 会话消息区(附件卡片)
+    s.download(() => writeFileSync(join(outDir, "邵越-中文简历.pdf"), PDF_BYTES));
+
+    const outcome = await runAttachFetchUi(makeCtx(s), { name: "邵女士", outDir, dryRun: false });
+
+    assert.equal(outcome.found, true);
+    assert.equal(outcome.success, true);
+    assert.equal(outcome.fileName, "邵越-中文简历.pdf");
+    assert.equal(outcome.sha256, PDF_SHA);
+    assert.ok(outcome.steps.some((l) => l.includes("会话行")), "应记录会话行定位");
+    assert.ok(outcome.steps.some((l) => l.includes("检出附件卡片")), "应检出附件卡片");
+    assert.deepEqual(
+      s.calls.map((c) => c.tool),
+      [
+        "browser_navigate",
+        "get_browser_state",
+        "get_browser_state",
+        "browser_click",
+        "get_browser_state",
+        "browser_download",
+      ],
+    );
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
+test("attach --name 会话未找到时报明确错误", async () => {
+  const s = new Scenario();
+  const outDir = tempDir();
+  try {
+    s.nav("https://lpt.liepin.com/chat/im").snap(["其他人"], CHAT_URL, true);
+
+    await assert.rejects(
+      runAttachFetchUi(makeCtx(s), { name: "邵女士", outDir, dryRun: false }),
+      /未找到「邵女士」/,
+    );
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
+});

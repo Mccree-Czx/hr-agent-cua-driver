@@ -8,7 +8,7 @@ import { DriverClient, type ToolCallResult } from "../cua/driver-client.js";
 import type { BrowserSession } from "../cua/session.js";
 import type { UiContext } from "../cua/ui-actions.js";
 import { extractJobRecords } from "../cua/extract.js";
-import { captureIdsByClickThrough, runReadChatMsg, runReadList } from "./read-pages.js";
+import { captureIdsByClickThrough, runReadChatMsg, runReadList, runReadSearch } from "./read-pages.js";
 import { runReadResume } from "./read-resume.js";
 
 const RESUME_URL = "https://lpt.liepin.com/resume/detail?resIdEncode=r-1&sfrom=R_SEARCH_CONDITION";
@@ -270,4 +270,34 @@ test("runReadList:autoCaptureRows 逐行穿透并把 job_id 合并进 records(jo
   assert.equal(records[0].jobId, "J9");
   assert.equal(outcome.extraction_status, "validated");
   assert.ok(outcome.steps.some((l) => l.includes("自动穿透 1 行")));
+});
+
+test("runReadSearch:关键词拼 URL + records 复用候选人抽取(预实现,结构待真机校准)", async () => {
+  const s = new Scenario();
+  const card = [
+    { name: "温女士" },
+    { name: "27岁" },
+    { name: "3年" },
+    { name: "本科" },
+    { name: "济南" },
+    { name: "期望：" },
+    { name: "墨西哥" },
+    { name: "海外销售" },
+    { name: "15-20K" },
+  ];
+  s.nav()
+    .snap([{ name: "搜索" }]) // checkPageState
+    .snap(card); // readPage 快照
+
+  const outcome = await runReadSearch(makeCtx(s), { keywords: "海外销售", captureRefs: [], dryRun: false });
+
+  const records = outcome.records as Array<Record<string, unknown>>;
+  assert.equal(records.length, 1);
+  assert.equal(records[0].name, "温女士");
+  assert.equal(records[0].expect_position, "海外销售");
+  assert.equal(outcome.extraction_status, "validated");
+  assert.ok(
+    outcome.steps.some((l) => l.includes("海外销售") && l.includes("URL 公式待真机校准")),
+    "应带 URL 公式校准标记(关键词已编码)",
+  );
 });

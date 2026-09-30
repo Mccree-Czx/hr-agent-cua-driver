@@ -14,7 +14,7 @@
  */
 
 import { CuaError } from "../contract.js";
-import type { SnapshotResult } from "../cua/session.js";
+import { clickRef, type SnapshotResult } from "../cua/session.js";
 import {
   ensureAbsoluteDir,
   fileNameOf,
@@ -24,6 +24,7 @@ import {
 } from "../cua/download.js";
 import { takeSnapshot, type UiContext } from "../cua/ui-actions.js";
 import { checkPageState, navigateChecked } from "./common.js";
+import { findConversationRow } from "./read-pages.js";
 
 export interface AttachOutcome {
   found: boolean;
@@ -56,10 +57,12 @@ export function findAttachmentRef(snap: SnapshotResult): { ref: string; name: st
 }
 
 export interface AttachInput {
-  /** 会话页 URL(联调期必填:im_id → 会话 URL 映射待确认) */
-  pageUrl: string;
+  /** 会话页 URL(--name 会话名键模式下可缺省,自动导航 /chat/im) */
+  pageUrl?: string;
   /** 对方会话 im_id(仅留痕) */
   imId?: string;
+  /** UI 会话键:候选人名(替代 im_id;导航 /chat/im 后按名点开会话再检出附件) */
+  name?: string;
   /** 下载目录(绝对路径;后端传 attachWorkDir()) */
   outDir: string;
   dryRun: boolean;
@@ -73,7 +76,28 @@ export async function runAttachCore(ctx: UiContext, input: AttachInput): Promise
     ctx.log(msg);
   };
 
-  await navigateChecked(ctx, input.pageUrl);
+  if (input.name !== undefined && input.name !== "") {
+    // UI 会话名键模式(2026-09-30):导航会话页 → 按名点开会话 → 再检出附件
+    const listUrl = input.pageUrl !== undefined && input.pageUrl !== ""
+      ? input.pageUrl
+      : "https://lpt.liepin.com/chat/im";
+    await navigateChecked(ctx, listUrl);
+    const listSnap = await takeSnapshot(ctx);
+    const row = findConversationRow(listSnap.refs, input.name);
+    if (row === null) {
+      throw new CuaError("failed", `会话列表中未找到「${input.name}」(附件检出按名定位失败)`);
+    }
+    note(`会话行 ${row.ref}「${row.name ?? ""}」`);
+    if (!input.dryRun) {
+      await clickRef(ctx.client, ctx.session, row.ref);
+      await ctx.sleep(2_000);
+    }
+  } else {
+    if (input.pageUrl === undefined || input.pageUrl === "") {
+      throw new CuaError("failed", "attach 需要 --url <会话页> 或 --name <候选人名>");
+    }
+    await navigateChecked(ctx, input.pageUrl);
+  }
   const snap = await takeSnapshot(ctx);
   checkPageState(snap);
   if (input.imId !== undefined && input.imId !== "") {

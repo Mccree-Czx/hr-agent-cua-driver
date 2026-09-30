@@ -4,7 +4,8 @@
  * 参数对齐后端(LiepinCommandService):
  *   attach-fetch    --imId <对方会话> --out <目录> --json
  *   attach-download --imId <对方会话> --out <目录> --json
- * UI 模式额外要求 --url(im_id → 会话 URL 映射待联调确认;见抽取契约)。
+ * UI 模式:--url <会话页> 或 --name <候选人名>(会话名键模式,自动导航 /chat/im 并点开会话);
+ * 页面路径与下载按钮行为待真机验证(见抽取契约)。
  */
 
 import type { DriverConfig } from "../config.js";
@@ -12,10 +13,11 @@ import { flagValue, type ParsedArgs } from "../cli/args.js";
 import { runAttachDownloadUi, runAttachFetchUi, type AttachOutcome } from "../flows/attachments.js";
 import { withContext } from "./outbound.js";
 
-function readCommonArgs(args: ParsedArgs, command: string): { url: string; outDir: string } | null {
-  const url = flagValue(args, "url");
-  if (url === null || url.trim() === "") {
-    console.error(`${command}: UI 模式必须传 --url <会话页>(im_id → URL 映射待联调确认,见 docs/superpowers/specs/2026-09-29-ui-extraction-contract.md)`);
+function readCommonArgs(args: ParsedArgs, command: string): { url?: string; name?: string; outDir: string } | null {
+  const url = (flagValue(args, "url") ?? "").trim();
+  const name = (flagValue(args, "name") ?? "").trim();
+  if (url === "" && name === "") {
+    console.error(`${command}: UI 模式必须传 --url <会话页> 或 --name <候选人名>(会话名键模式自动导航 /chat/im;见 docs/superpowers/specs/2026-09-29-ui-extraction-contract.md)`);
     return null;
   }
   const outDir = flagValue(args, "out");
@@ -23,7 +25,11 @@ function readCommonArgs(args: ParsedArgs, command: string): { url: string; outDi
     console.error(`${command}: 必须传 --out <绝对目录>(后端传 attachWorkDir())`);
     return null;
   }
-  return { url: url.trim(), outDir: outDir.trim() };
+  return {
+    url: url === "" ? undefined : url,
+    name: name === "" ? undefined : name,
+    outDir: outDir.trim(),
+  };
 }
 
 function printOutcome(outcome: AttachOutcome, extra?: Record<string, unknown>): void {
@@ -39,7 +45,13 @@ export async function handleAttachFetch(cfg: DriverConfig, args: ParsedArgs): Pr
   const imId = flagValue(args, "imId") ?? undefined;
   const dryRun = args.flags["dry-run"] === true;
   return withContext(cfg, args, async (ctx) => {
-    const outcome = await runAttachFetchUi(ctx, { pageUrl: common.url, imId, outDir: common.outDir, dryRun });
+    const outcome = await runAttachFetchUi(ctx, {
+      pageUrl: common.url,
+      name: common.name,
+      imId,
+      outDir: common.outDir,
+      dryRun,
+    });
     printOutcome(outcome);
   });
 }
@@ -53,7 +65,13 @@ export async function handleAttachDownload(cfg: DriverConfig, args: ParsedArgs):
   const imId = flagValue(args, "imId") ?? undefined;
   const dryRun = args.flags["dry-run"] === true;
   return withContext(cfg, args, async (ctx) => {
-    const outcome = await runAttachDownloadUi(ctx, { pageUrl: common.url, imId, outDir: common.outDir, dryRun });
+    const outcome = await runAttachDownloadUi(ctx, {
+      pageUrl: common.url,
+      name: common.name,
+      imId,
+      outDir: common.outDir,
+      dryRun,
+    });
     printOutcome(outcome);
   });
 }

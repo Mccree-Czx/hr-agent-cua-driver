@@ -50,14 +50,19 @@ public class LiepinCommandService {
 
     /** 搜索人才 → 候选人数组 */
     public List<JsonNode> search(LiepinAccount account, String keywords, int limit, Duration timeout) {
-        CliResult result = run(account, timeout, "search", keywords, "--limit", String.valueOf(limit), "--json");
+        boolean ui = cuaCommandResolver.useUi("search");
+        // UI 通道:搜索页 records(--with-ids 逐卡穿透取 resume_id;页面条数固定无 limit 语义)
+        CliResult result = ui
+                ? run(account, timeout, "search", keywords, "--with-ids", "--json")
+                : run(account, timeout, "search", keywords, "--limit", String.valueOf(limit), "--json");
         JsonNode node = JsonExtractor.parse(result.stdout())
                 .orElseThrow(() -> BizException.badRequest("搜索输出无有效 JSON"));
-        if (!node.isArray()) {
+        JsonNode rows = ui ? node.path("records") : node;
+        if (!rows.isArray()) {
             throw BizException.badRequest("搜索输出不是数组: " + truncate(result.stdout()));
         }
         List<JsonNode> list = new ArrayList<>();
-        node.forEach(list::add);
+        rows.forEach(list::add);
         return list;
     }
 
@@ -182,19 +187,35 @@ public class LiepinCommandService {
     }
 
     /**
-     * 获取简历附件(API 路线,2026-09-26):纯接口检出附件卡片 + 浏览器下载通道落盘,
+     * 获取简历附件(2026-09-30 增 UI 会话名键)。
+     * UI 通道:优先 --imId;无 im_id 时用 --name <会话名>(会话名键,自动导航 /chat/im 点开会话);
+     * legacy 通道:必须 im_id,缺失时返回空(不猜测,原上层守卫下沉)。
      * 输出三态 JSON:{found:false,reason:no-attachment} / {found:true,success:false,reason} / 成功含 file/bytes/sha256/fileName。
-     * 不打开会话(零已读副作用);签名值不出现在输出中。
      */
-    public Optional<JsonNode> attachFetch(LiepinAccount account, String imId, String outDir, Duration timeout) {
-        if (imId == null || imId.isBlank()) {
-            throw BizException.badRequest("attach-fetch 必须提供会话 im_id");
-        }
+    public Optional<JsonNode> attachFetch(LiepinAccount account, String imId, String sessionName,
+                                          String outDir, Duration timeout) {
         if (outDir == null || outDir.isBlank()) {
             throw BizException.badRequest("attach-fetch 必须提供下载目录");
         }
-        CliResult result = run(account, timeout, "attach-fetch",
-                "--imId", imId, "--out", outDir, "--json");
+        boolean ui = cuaCommandResolver.useUi("attach-fetch");
+        CliResult result;
+        if (ui) {
+            if (imId != null && !imId.isBlank()) {
+                result = run(account, timeout, "attach-fetch",
+                        "--imId", imId, "--out", outDir, "--json");
+            } else if (sessionName != null && !sessionName.isBlank()) {
+                result = run(account, timeout, "attach-fetch",
+                        "--name", sessionName, "--out", outDir, "--json");
+            } else {
+                return Optional.empty(); // 无键不猜测
+            }
+        } else {
+            if (imId == null || imId.isBlank()) {
+                return Optional.empty(); // legacy 无 im_id 不调(原上层守卫下沉)
+            }
+            result = run(account, timeout, "attach-fetch",
+                    "--imId", imId, "--out", outDir, "--json");
+        }
         return JsonExtractor.parse(result.stdout());
     }
 

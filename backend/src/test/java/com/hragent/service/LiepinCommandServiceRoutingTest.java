@@ -16,6 +16,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -190,5 +191,64 @@ class LiepinCommandServiceRoutingTest {
         assertTrue(java.util.Arrays.asList(captor.getValue()).contains("--with-ids"),
                 "UI 通道必须带 --with-ids 保证 resume_id 可得");
         verify(legacy, never()).execute(any(), any(), any(String[].class));
+    }
+
+    @Test
+    void uiSearchReadsRecordsAndPassesWithIds() throws Exception {
+        enableUi("search");
+        when(cua.execute(any(), any(), any(String[].class)))
+                .thenReturn(new CliResult(0,
+                        "{\"extraction_status\":\"validated\",\"records\":[{\"name\":\"温女士\",\"expect_position\":\"海外销售\",\"resume_id\":\"eb75dde295fdSc7f903cb4428\"}]}",
+                        "", false));
+
+        List<JsonNode> cands = service.search(account, "海外销售", 20, Duration.ofMinutes(1));
+
+        assertEquals(1, cands.size());
+        assertEquals("温女士", cands.get(0).path("name").asText());
+        assertEquals("eb75dde295fdSc7f903cb4428", cands.get(0).path("resume_id").asText());
+        ArgumentCaptor<String[]> captor = ArgumentCaptor.forClass(String[].class);
+        verify(cua, times(1)).execute(eq(account), any(), captor.capture());
+        List<String> argv = java.util.Arrays.asList(captor.getValue());
+        assertEquals("search", captor.getValue()[0]);
+        assertTrue(argv.contains("海外销售") && argv.contains("--with-ids"),
+                "UI 通道: 关键词位置参数 + --with-ids 保证 resume_id 可得");
+        verify(legacy, never()).execute(any(), any(), any(String[].class));
+    }
+
+    @Test
+    void legacySearchStaysArrayOutput() throws Exception {
+        when(legacy.execute(any(), any(), any(String[].class)))
+                .thenReturn(new CliResult(0, "[{\"name\":\"张三\",\"resume_id\":\"r1\"}]", "", false));
+
+        List<JsonNode> cands = service.search(account, "销售", 20, Duration.ofMinutes(1));
+
+        assertEquals(1, cands.size());
+        assertEquals("张三", cands.get(0).path("name").asText());
+        verify(cua, never()).execute(any(), any(), any(String[].class));
+    }
+
+    @Test
+    void uiAttachFetchUsesNameWhenImIdMissing() throws Exception {
+        enableUi("attach-fetch");
+        when(cua.execute(any(), any(), any(String[].class)))
+                .thenReturn(new CliResult(0, "{\"found\":false,\"success\":false,\"reason\":\"no-attachment\"}", "", false));
+
+        service.attachFetch(account, "", "温女士", "C:/tmp/out", Duration.ofMinutes(1));
+
+        ArgumentCaptor<String[]> captor = ArgumentCaptor.forClass(String[].class);
+        verify(cua, times(1)).execute(eq(account), any(), captor.capture());
+        List<String> argv = java.util.Arrays.asList(captor.getValue());
+        assertTrue(argv.contains("--name") && argv.contains("温女士"),
+                "UI 通道无 im_id 时应按会话名定位(--name)");
+        verify(legacy, never()).execute(any(), any(), any(String[].class));
+    }
+
+    @Test
+    void legacyAttachFetchWithoutImIdReturnsEmptyWithoutCall() throws Exception {
+        Optional<JsonNode> r = service.attachFetch(account, "", "温女士", "C:/tmp/out", Duration.ofMinutes(1));
+
+        assertTrue(r.isEmpty(), "legacy 无 im_id 应空返回(守卫下沉)");
+        verify(legacy, never()).execute(any(), any(), any(String[].class));
+        verify(cua, never()).execute(any(), any(), any(String[].class));
     }
 }

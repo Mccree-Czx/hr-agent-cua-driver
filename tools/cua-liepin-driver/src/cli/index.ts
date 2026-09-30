@@ -47,7 +47,8 @@ function printHelp(): void {
          --name=会话名键模式,替代 im_id,自动导航 /chat/im 并点开会话)
   joblist [--url <页面>] [--with-ids] [--capture-ids --ref <pN:M> ...]  职位列表页抽取(默认 /job/manager;结构化 records)
         点击穿透取 ejob_id(--with-ids 自动逐行穿透并合并进 records;--id-param 默认 ejob_id)
-  attach-fetch --url <会话页> --out <目录>        附件检出+下载(三态输出;--imId 留痕;--dry-run)
+  attach-fetch --url <会话页> | --name <候选人名> --out <目录>  附件检出+下载(三态输出;
+         --name=会话名键模式自动导航 /chat/im 并点开会话;--imId 留痕;--dry-run)
   attach-download --url <会话页> --out <目录>     附件下载(任一失败非零退出)
 
 W5 管理类命令(部分校准):

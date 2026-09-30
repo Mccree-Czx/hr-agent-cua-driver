@@ -139,7 +139,7 @@ class ChatPollServiceTest {
 
         stubChatlist("{\"im_id\":\"im1\",\"name\":\"张三\",\"direction\":\"1\",\"raw_metadata\":{\"latestMsgId\":\"m-100\"}}");
         Path pdf = writePdf("resume-fetched.pdf");
-        when(commandService.attachFetch(any(), eq("im1"), anyString(), any()))
+        when(commandService.attachFetch(any(), eq("im1"), any(), anyString(), any()))
                 .thenReturn(Optional.of(attachFetchResult(pdf, "硬件工程师0922.pdf")));
 
         int processed = chatPollService.pollOnce(account);
@@ -152,7 +152,7 @@ class ChatPollServiceTest {
         assertEquals(PDF.length, files.get(0).getSize());
         assertTrue(files.get(0).getObjectKey().contains("硬件工程师0922"), "入库文件名应来自 attach-fetch(fileName)");
         assertTrue(storageService.exists(files.get(0).getObjectKey()), "附件应写入存储");
-        verify(commandService).attachFetch(any(), eq("im1"), anyString(), any());
+        verify(commandService).attachFetch(any(), eq("im1"), any(), anyString(), any());
         assertEquals("m-100", greetingMapper.selectById(record.getId()).getAttachProbeMsgId(), "探测成功后应写消息级标记");
         verify(commandService, never()).requestResume(any(), anyString(), any(), any());
         assertFalse(Files.exists(pdf), "下载临时文件应清理");
@@ -166,7 +166,7 @@ class ChatPollServiceTest {
         GreetingRecord record = greeting(candidate);
 
         stubChatlist("{\"im_id\":\"im1\",\"direction\":\"1\",\"raw_metadata\":{\"latestMsgId\":\"m-9\"}}");
-        when(commandService.attachFetch(any(), eq("im1"), anyString(), any()))
+        when(commandService.attachFetch(any(), eq("im1"), any(), anyString(), any()))
                 .thenReturn(Optional.of(objectMapper.readTree(
                         "{\"found\":true,\"success\":false,\"reason\":\"download-failed\",\"detail\":\"取消\"}")));
 
@@ -176,7 +176,7 @@ class ChatPollServiceTest {
         assertEquals(0, first);
         assertEquals(0, second);
         assertEquals(0, resumeFileMapper.selectCount(new LambdaQueryWrapper<>()), "失败不得入库(无半状态)");
-        verify(commandService, times(2)).attachFetch(any(), eq("im1"), anyString(), any());
+        verify(commandService, times(2)).attachFetch(any(), eq("im1"), any(), anyString(), any());
         assertNull(greetingMapper.selectById(record.getId()).getAttachProbeMsgId(), "失败不得写探测标记(下轮重试)");
     }
 
@@ -199,7 +199,7 @@ class ChatPollServiceTest {
 
         chatPollService.pollOnce(account);
 
-        verify(commandService, never()).attachFetch(any(), anyString(), anyString(), any());
+        verify(commandService, never()).attachFetch(any(), anyString(), any(), anyString(), any());
         verify(commandService).requestResume(any(), eq("r-im1"), any(), any()); // 防抖不阻塞"回复索要"
     }
 
@@ -211,12 +211,12 @@ class ChatPollServiceTest {
         greetingMapper.updateById(record);
 
         stubChatlist("{\"im_id\":\"im1\",\"direction\":\"1\",\"raw_metadata\":{\"latestMsgId\":\"m-200\"}}");
-        when(commandService.attachFetch(any(), eq("im1"), anyString(), any()))
+        when(commandService.attachFetch(any(), eq("im1"), any(), anyString(), any()))
                 .thenReturn(Optional.of(objectMapper.readTree("{\"found\":false,\"success\":false,\"reason\":\"no-attachment\"}")));
 
         chatPollService.pollOnce(account);
 
-        verify(commandService).attachFetch(any(), eq("im1"), anyString(), any());
+        verify(commandService).attachFetch(any(), eq("im1"), any(), anyString(), any());
         assertEquals("m-200", greetingMapper.selectById(record.getId()).getAttachProbeMsgId(), "新消息应重探并更新标记");
     }
 
@@ -328,7 +328,7 @@ class ChatPollServiceTest {
         greeting(candidate);
 
         stubChatlist("{\"im_id\":\"im1\",\"direction\":\"1\",\"raw_metadata\":{\"latestMsgId\":\"m-risk\"}}");
-        when(commandService.attachFetch(any(), eq("im1"), anyString(), any()))
+        when(commandService.attachFetch(any(), eq("im1"), any(), anyString(), any()))
                 .thenThrow(new CliException(CliException.Type.RISK_CONTROL, "安全验证"));
 
         assertThrows(CliException.class, () -> chatPollService.pollOnce(account));
@@ -359,10 +359,10 @@ class ChatPollServiceTest {
         when(commandService.chatlist(any(), any())).thenReturn(List.of(
                 objectMapper.readTree("{\"im_id\":\"imA\",\"direction\":\"1\",\"raw_metadata\":{\"latestMsgId\":\"mA\"}}"),
                 objectMapper.readTree("{\"im_id\":\"imB\",\"direction\":\"1\",\"raw_metadata\":{\"latestMsgId\":\"mB\"}}")));
-        when(commandService.attachFetch(any(), eq("imA"), anyString(), any()))
+        when(commandService.attachFetch(any(), eq("imA"), any(), anyString(), any()))
                 .thenThrow(new RuntimeException("会话 A 附件获取失败"));
         Path pdf = writePdf("b.pdf");
-        when(commandService.attachFetch(any(), eq("imB"), anyString(), any()))
+        when(commandService.attachFetch(any(), eq("imB"), any(), anyString(), any()))
                 .thenReturn(Optional.of(attachFetchResult(pdf, "乙.pdf")));
 
         int processed = chatPollService.pollOnce(account);
@@ -452,9 +452,9 @@ class ChatPollServiceTest {
                 objectMapper.readTree("{\"im_id\":\"imA\",\"direction\":\"1\",\"raw_metadata\":{\"latestMsgId\":\"mA\"}}"),
                 objectMapper.readTree("{\"im_id\":\"imB\",\"direction\":\"1\",\"raw_metadata\":{\"latestMsgId\":\"mB\"}}")));
         Path pdf = writePdf("a.pdf");
-        when(commandService.attachFetch(any(), eq("imA"), anyString(), any()))
+        when(commandService.attachFetch(any(), eq("imA"), any(), anyString(), any()))
                 .thenReturn(Optional.of(attachFetchResult(pdf, "甲.pdf")));
-        when(commandService.attachFetch(any(), eq("imB"), anyString(), any()))
+        when(commandService.attachFetch(any(), eq("imB"), any(), anyString(), any()))
                 .thenReturn(Optional.of(objectMapper.readTree("{\"found\":false,\"success\":false,\"reason\":\"no-attachment\"}")));
         stubChatmsg("imB", "{\"sender\":\"对方\",\"payload\":{\"bodies\":[{\"type\":\"txt\",\"msg\":\"您好\"}]}}");
         when(commandService.requestResume(any(), eq("r-imB"), any(), any()))
@@ -618,7 +618,7 @@ class ChatPollServiceTest {
 
         stubChatlist("{\"im_id\":\"im1\",\"name\":\"张三\",\"direction\":\"1\",\"raw_metadata\":{\"latestMsgId\":\"m-off-2\"}}");
         Path pdf = writePdf("resume-off.pdf");
-        when(commandService.attachFetch(any(), eq("im1"), anyString(), any()))
+        when(commandService.attachFetch(any(), eq("im1"), any(), anyString(), any()))
                 .thenReturn(Optional.of(attachFetchResult(pdf, "简历.pdf")));
 
         int processed = chatPollService.pollOnce(account);
@@ -814,7 +814,7 @@ class ChatPollServiceTest {
 
         assertEquals(1, processed, "会话名键命中 known 链,索要应计为已处理");
         verify(commandService).requestResume(any(), eq("r-wen"), any(), any());
-        verify(commandService, never()).attachFetch(any(), anyString(), anyString(), any());
+        verify(commandService, never()).attachFetch(any(), anyString(), any(), anyString(), any());
         verify(commandService, never()).chatmsg(any(), anyString(), any());
     }
 
@@ -829,7 +829,7 @@ class ChatPollServiceTest {
 
         assertEquals(0, processed, "同名多命中应跳过(不猜测)");
         verify(commandService, never()).requestResume(any(), anyString(), any(), any());
-        verify(commandService, never()).attachFetch(any(), anyString(), anyString(), any());
+        verify(commandService, never()).attachFetch(any(), anyString(), any(), anyString(), any());
         verify(commandService, never()).chatmsg(any(), anyString(), any());
     }
 
@@ -842,5 +842,27 @@ class ChatPollServiceTest {
         assertEquals(0, processed, "im_id 与 name 均缺失应跳过");
         verify(commandService, never()).requestResume(any(), anyString(), any(), any());
         verify(commandService, never()).chatmsg(any(), anyString(), any());
+    }
+
+    @Test
+    void uiChannelAttachFetchesBySessionNameWhenImIdMissing() throws Exception {
+        Jd jd = unconfirmedJd("招聘主管", "88888");
+        Candidate candidate = knownCandidate("", "温女士");
+        candidate.setJdId(jd.getId());
+        candidateMapper.updateById(candidate);
+        greeting(candidate);
+
+        stubChatlist("{\"name\":\"温女士\",\"direction\":\"1\",\"raw_metadata\":{\"latestMsgId\":\"m-ui-1\"}}");
+        Path pdf = writePdf("resume-by-name.pdf");
+        when(commandService.attachFetch(any(), eq(""), eq("温女士"), anyString(), any()))
+                .thenReturn(Optional.of(attachFetchResult(pdf, "温女士的简历.pdf")));
+
+        int processed = chatPollService.pollOnce(account);
+
+        assertEquals(1, processed, "会话名键附件探测应成功入库并计为已处理");
+        List<ResumeFile> files = resumeFileMapper.selectList(new LambdaQueryWrapper<ResumeFile>()
+                .eq(ResumeFile::getCandidateId, candidate.getId()));
+        assertEquals(1, files.size(), "附件应入库");
+        verify(commandService).attachFetch(any(), eq(""), eq("温女士"), anyString(), any());
     }
 }

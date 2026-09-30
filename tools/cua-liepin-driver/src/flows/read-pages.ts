@@ -207,6 +207,40 @@ export async function runReadRecommend(ctx: UiContext, input: RecommendInput): P
   return outcome;
 }
 
+export interface SearchInput {
+  /** 完整搜索页 URL(--url 优先;联调期可绕开关键词拼装直接给 URL) */
+  pageUrl?: string;
+  /** 搜索关键词(URL 公式待真机校准:当前按 /search?key=<keywords> 预实现) */
+  keywords: string;
+  withIds?: boolean;
+  captureRefs: string[];
+  idParam?: string;
+  dryRun: boolean;
+}
+
+/**
+ * 搜索页 records 预实现(2026-09-30):搜索页与推荐页同为人卡片组件,复用
+ * extractCandidateRecords 与 candidateRowIndexes;
+ * resume_id 同 recommend 走预览层「简历编号」穿透(--with-ids);
+ * 页面真实结构与姓名节点规则待解锁真机校准(URL 公式同待校准)。
+ */
+export async function runReadSearch(ctx: UiContext, input: SearchInput): Promise<RawPageOutcome> {
+  const url = input.pageUrl ?? `https://lpt.liepin.com/search?key=${encodeURIComponent(input.keywords)}`;
+  const outcome = await runReadList(ctx, {
+    pageUrl: url,
+    captureRefs: input.captureRefs,
+    idParam: input.idParam ?? "resIdEncode",
+    dryRun: input.dryRun,
+    label: "搜索页",
+    recordsExtractor: (snap) => extractCandidateRecords(snap),
+    autoCaptureRows: input.withIds === true,
+    autoCaptureRowRefs: (snap) => candidateRowIndexes(snap.refs).map((i) => snap.refs[i].ref),
+    autoCaptureField: "resume_id",
+  });
+  outcome.steps.unshift(`关键词「${input.keywords}」URL 公式待真机校准(本次: ${url})`);
+  return outcome;
+}
+
 export interface ChatMsgInput {
   /** 会话页 URL(缺省按 --name 模式固定 /chat/im) */
   pageUrl: string;

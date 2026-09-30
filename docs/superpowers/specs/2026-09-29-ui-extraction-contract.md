@@ -195,3 +195,9 @@ UI 输出形状:
 - legacy 输出:resName / resIdEncode / usercId / resumeUrl;
 - **UI 实现路径**:搜索页与推荐页同为人才卡片,`extractCandidateRecords` 可复用(name/raw_text/期望字段);resume_id 走预览层「简历编号」穿透(同 recommend --with-ids);talentId 从穿透后 url 提取;
 - 待解锁:校准 /search 页面卡片结构(尤其姓名节点规则是否与推荐页一致)→ 接线 recordsExtractor → 后端双通道归一。
+
+### 离线预接线批次(2026-09-30)
+- **search(驱动+后端已接线,待真机校准)**:`runReadSearch`(records 复用候选人抽取;URL 公式预实现 `/search?key=<kw>` 待校准);`handleSearch <keywords> [--url] [--with-ids]`;后端 `search` UI 分支 `--with-ids`+读 records;
+- **attach 会话名键(驱动+后端已接线,待真机验证下载按钮)**:`attach-fetch --name <候选人名>`(导航 /chat/im→会话行定位→点开→附件检出;三态与签名校验不变);后端 `attachFetch(account, imId, sessionName, outDir, timeout)`:UI 优先 --imId、无则 --name、两者皆空不猜测;legacy 无 im_id 空返回(守卫下沉);ChatPollService 已去硬跳过、传会话名;
+- 测试:驱动 113/113(+3: search/attach-name×2);后端 314/314(+5: search UI/legacy、attach UI-name/legacy-空返回、名键附件入库);
+- 真机待验:attach viewer 下载按钮、search 页面结构。
