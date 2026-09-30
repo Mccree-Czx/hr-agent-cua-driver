@@ -369,7 +369,13 @@ test("runReadSearch:key参数预填→点'搜索'提交→结果 records(2026-09
   ];
   s.nav()
     .nav() // about:blank 清场
-    .snap([{ name: "搜索", role: "button", actions: ["click"] }]) // 搜索页(含提交按钮)
+    .snap([
+      { name: "搜职位/公司/行业等", actions: ["type"] },
+      { name: "搜索", role: "button", actions: ["click"] },
+    ]) // 搜索页(含输入框与提交按钮)
+    .snap([{ name: "搜职位/公司/行业等", actions: ["type"] }]) // waitForMatch 定位输入框
+    .expect("browser_type", {}) // 输入关键词
+    .snap([{ name: "搜索", role: "button", actions: ["click"] }]) // 输入后快照
     .click() // 提交搜索
     .snap(card); // 结果页
 
@@ -389,7 +395,10 @@ test("runReadSearch:引导卡出现时先关闭再提交", async () => {
     .nav() // about:blank 清场
     .snap([{ name: "我知道了", role: "button", actions: ["click"] }]) // 引导卡
     .click() // 关闭引导
-    .snap([{ name: "搜索", role: "button", actions: ["click"] }]) // 搜索页
+    .snap([{ name: "搜职位/公司/行业等", actions: ["type"] }]) // 关闭后快照
+    .snap([{ name: "搜职位/公司/行业等", actions: ["type"] }]) // waitForMatch
+    .expect("browser_type", {}) // 输入关键词
+    .snap([{ name: "搜索", role: "button", actions: ["click"] }]) // 输入后
     .click() // 提交
     .snap([{ name: "李女士" }, { name: "30岁" }, { name: "5年" }, { name: "硕士" }, { name: "北京" }]);
 

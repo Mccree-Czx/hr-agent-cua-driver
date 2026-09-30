@@ -18,7 +18,7 @@ import {
   textLinesOf,
 } from "../cua/extract.js";
 import { clickRef, type SnapshotRef, type SnapshotResult } from "../cua/session.js";
-import { navigate, takeSnapshot, type UiContext } from "../cua/ui-actions.js";
+import { navigate, takeSnapshot, typeIntoName, type UiContext } from "../cua/ui-actions.js";
 import { checkPageState, navigateChecked } from "./common.js";
 
 /** 点击穿透结果(卡片 → 详情 URL → ID 参数) */
@@ -332,7 +332,23 @@ export async function runReadSearch(ctx: UiContext, input: SearchInput): Promise
     snap = await takeSnapshot(ctx);
   }
 
-  // 提交搜索:点"搜索"按钮(精确名;排除导航"搜索人才")
+  // 2) 输入关键词到岗位搜索框(2026-09-30 真机: URL key 参数仅填 AI 搜索,
+  //    岗位搜索框为空导致"请设置搜索条件进行搜索")→ 显式输入
+  const typed = await typeIntoName(
+    ctx,
+    "搜索职位",
+    {
+      names: ["搜职位/公司/行业", "搜索职位", "请输入职位名称"],
+      actions: ["type"],
+    },
+    input.keywords,
+  ).catch(() => false);
+  if (!typed) {
+    ctx.log("未找到岗位搜索输入框(页面结构可能变化,继续尝试直接提交)");
+  }
+  snap = await takeSnapshot(ctx);
+
+  // 3) 提交搜索:点"搜索"按钮(精确名;排除导航"搜索人才")
   let go = snap.refs.find((r) => r.name === "搜索" && (r.role === "button" || r.actions.includes("click")));
   if (go === undefined) {
     // 提交按钮未出现在快照中:清场重试一次
