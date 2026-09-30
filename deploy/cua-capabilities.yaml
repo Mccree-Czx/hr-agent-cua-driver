@@ -1,0 +1,61 @@
+# 猎聘 CUA 驱动能力清单(2026-09-30)
+#
+# 用途:与 --dangerously-bypass-approvals(unrestricted) 或 --permission-mode bounded 组合,
+#   将"审批绕过/工具面"收窄到猎聘 typed-browser 工作所需的确切范围——
+#   关键收益:browser_download 在 manifest 范围内获得审批绕过(解开宿主确认流对附件下载的拦截)。
+#
+# 启动示例:
+#   cua-driver serve --dangerously-bypass-approvals --capability-manifest .\deploy\cua-capabilities.yaml --approve-capability-manifest
+#
+# 注意:声明 browser.origins 的清单不得同时允许 generic 输入工具
+#   (click/type_text/get_window_state 等会被启动时拒绝),故本清单仅含 typed-browser 工具。
+#   origins 按 scheme+host+port 精确匹配。
+
+version: 3
+expires_after: 24h
+idle_timeout: 4h
+
+allow:
+  tools:
+    - start_session
+    - end_session
+    - list_windows
+    - browser_prepare
+    - get_browser_state
+    - browser_navigate
+    - browser_click
+    - browser_type
+    - browser_pointer
+    - browser_download
+
+resources:
+  apps:
+    # Chrome 窗口须在清单内,否则 browser_prepare/get_browser_state
+    # 拒绝:desktop pid/window is outside the capability manifest(2026-09-30 真机)
+    - executable: C:\Program Files\Google\Chrome\Application\chrome.exe
+      launch: true
+      windows: all
+      terminate: driver_launched
+
+  browser:
+    profiles:
+      - kind: existing_profile
+    origins:
+      # 清场导航(关于页)也需在 origins 内(2026-09-30 真机:否则清场被 origin 校验拒)
+      - about:blank
+      - https://lpt.liepin.com
+      - https://tdoss.liepin.com
+      - https://api-c.liepin.com
+
+  desktop:
+    # list_windows 属"desktop display observation",需置 true(2026-09-30 真机:否则 browser_prepare 前置的
+    # 窗口枚举被拒 bounded_resource_outside_manifest);本清单已剔除 generic 输入工具,
+    # 保留 display 仅供窗口定位(origin 校验仍在 typed-browser 层生效)
+    display: true
+
+  files:
+    # 附件下载落盘目录须在清单内(2026-09-30 真机:否则 browser_download 被拒
+    # "the exact path is outside the capability manifest");后端 attachWorkDir() 位于系统临时目录下
+    write:
+      - dir: C:\Users\Administrator\AppData\Local\Temp
+        recursive: true
