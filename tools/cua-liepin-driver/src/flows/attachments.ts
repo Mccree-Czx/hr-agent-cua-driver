@@ -41,20 +41,30 @@ export interface AttachOutcome {
 }
 
 /** 附件卡片候选:文件名样式优先,其次"简历/附件"文案的可点击节点;
- * 2026-09-30 真机:排除会话页 UI 词(筛选 tab"有简历"/工具栏"浏览简历"等),避免误报
+ * 2026-09-30 真机:排除会话页 UI 词(筛选 tab"有简历"/工具栏"浏览简历"等),避免误报;
+ * 范围限定在最后一个"在线沟通" rootwebarea 之后(消息区)——列表区通知卡
+ * "收到了 X、Y等N人的简历"可点且含"简历",曾导致附件下载点错 ref(2026-09-30 实验发现)。
  */
 export function findAttachmentRef(snap: SnapshotResult): { ref: string; name: string } | null {
-  const fileish = snap.refs.find(
+  let start = 0;
+  for (let i = snap.refs.length - 1; i >= 0; i--) {
+    if (snap.refs[i].role === "rootwebarea" && (snap.refs[i].name ?? "").includes("在线沟通")) {
+      start = i + 1;
+      break;
+    }
+  }
+  const scoped = snap.refs.slice(start);
+  const fileish = scoped.find(
     (r) => r.name !== null && /\.(pdf|docx?|doc)\b/i.test(r.name) && r.actions.includes("click"),
   );
   if (fileish !== null && fileish !== undefined) {
     return { ref: fileish.ref, name: fileish.name as string };
   }
-  const hint = snap.refs.find(
+  const hint = scoped.find(
     (r) =>
       r.name !== null &&
       /简历|附件/.test(r.name) &&
-      !/^(有简历|浏览简历|通过筛选|不合适|超级聊聊|在线简历|收到简历)$/.test(r.name.trim()) &&
+      !/^(有简历|浏览简历|通过筛选|不合适|超级聊聊|在线简历|收到简历|收到了)/.test(r.name.trim()) &&
       r.actions.includes("click"),
   );
   if (hint !== null && hint !== undefined) {

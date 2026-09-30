@@ -64,6 +64,41 @@ test("findAttachmentRef:文件名样式优先,其次简历/附件文案;均需�
   );
 });
 
+test("findAttachmentRef:列表区通知卡不得误报——范围限定『在线沟通』rootwebarea 之后(2026-09-30 真机)", () => {
+  const mk = (refs: Array<{ name: string | null; role?: string; actions?: string[] }>): SnapshotResult => ({
+    snapshotId: "p1",
+    outline: "",
+    page: { title: "t", url: CHAT_URL },
+    refs: refs.map((r, i) => ({
+      ref: `p1:${i}`,
+      role: r.role ?? "statictext",
+      name: r.name,
+      actions: r.actions ?? [],
+    })),
+  });
+
+  // 真机形态:列表区通知卡(可点,含"简历")在 rootwebarea 之前;消息区附件卡在其后
+  const snapWithNotice = mk([
+    { name: null, role: "superscript" },
+    { name: "收到了 潘女士、王思又等3人的简历", actions: ["click", "pointer"] },
+    { name: "在线沟通", role: "rootwebarea", actions: [] },
+    { name: "潘女士的简历", actions: [] },
+  ]);
+  assert.equal(
+    findAttachmentRef(snapWithNotice),
+    null,
+    "rootwebarea 后的附件卡不可点时不得回退命中列表区通知卡",
+  );
+
+  // 消息区的可点附件文案仍应命中
+  const snapWithCard = mk([
+    { name: "收到了 潘女士、王思又等3人的简历", actions: ["click", "pointer"] },
+    { name: "在线沟通", role: "rootwebarea", actions: [] },
+    { name: "查看附件", actions: ["click"] },
+  ]);
+  assert.equal(findAttachmentRef(snapWithCard)?.name, "查看附件");
+});
+
 test("validateResumeFile:有效 PDF 返回 bytes/sha256;空文件与非 PDF 拒绝", () => {
   const dir = tempDir();
   try {
