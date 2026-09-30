@@ -220,6 +220,7 @@ function makeCtx(s: Scenario): UiContext {
       clock += ms;
     },
     now: () => clock,
+    minPageLines: 0, // 关闭内容充分性校验(专用用例单独开启)
   };
 }
 
@@ -359,15 +360,21 @@ test("attach-fetch --name 会话名键模式:导航会话页→点开会话→�
   }
 });
 
-test("attach --name 会话未找到时报明确错误", async () => {
+test("attach --name 会话未找到时报明确错误(清场重试 6 次后放弃)", async () => {
   const s = new Scenario();
   const outDir = tempDir();
+  const url = "https://lpt.liepin.com/chat/im";
   try {
-    s.nav("https://lpt.liepin.com/chat/im").snap(["其他人"], CHAT_URL, true);
+    for (let i = 0; i < 6; i++) {
+      s.nav(url).snap(["其他人"], CHAT_URL, true);
+      if (i < 5) {
+        s.push({ tool: "browser_navigate", payload: {} }); // about:blank 清场(裸导航)
+      }
+    }
 
     await assert.rejects(
       runAttachFetchUi(makeCtx(s), { name: "邵女士", outDir, dryRun: false }),
-      /未找到「邵女士」/,
+      /未找到「邵女士」.*已重试 6 次/,
     );
   } finally {
     rmSync(outDir, { recursive: true, force: true });

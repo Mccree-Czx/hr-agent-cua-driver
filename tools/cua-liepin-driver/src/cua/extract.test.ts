@@ -295,6 +295,19 @@ test("extractChatSessions:无时间锚时返回空(不伪造会话)", () => {
   assert.deepEqual(extractChatSessions(snap), []);
 });
 
+test("extractChatSessions:时间锚支持「昨天」等变体(2026-09-30 真机)", () => {
+  const snap = snapRefs([
+    { name: "邵女士" },
+    { name: "海外ToB渠道销售（出海品牌）" },
+    { name: "昨天" },
+    { name: "之前公司主要生产清洁用品和防晒品品类，虽然品类不同…" },
+  ]);
+  const sessions = extractChatSessions(snap);
+  assert.equal(sessions.length, 1);
+  assert.equal(sessions[0].name, "邵女士");
+  assert.equal(sessions[0].time, "昨天");
+});
+
 test("hasAttachmentHint:简历/附件卡片文案", () => {
   assert.equal(hasAttachmentHint(["你好", "张三的简历.pdf"]), true);
   assert.equal(hasAttachmentHint(["在线附件预览"]), true);

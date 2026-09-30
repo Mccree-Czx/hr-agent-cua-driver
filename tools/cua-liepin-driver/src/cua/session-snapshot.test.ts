@@ -53,9 +53,13 @@ function ref(r: string, name: string): Record<string, unknown> {
   return { ref: r, role: "statictext", name, actions: [] };
 }
 
-test("assertDesktopUnlocked:锁屏(false)抛明确错误;未锁定(true)通过", async () => {
+test("assertDesktopUnlocked:false 软化告警不拦截(2026-09-30 唤醒误报);true 通过", async () => {
   const locked = scriptedClient([{ payload: { desktop_unlocked: false, session: "test" } }]);
-  await assert.rejects(assertDesktopUnlocked(locked.client), /桌面已锁定/);
+  assert.equal(
+    await assertDesktopUnlocked(locked.client),
+    false,
+    "false 仅返回标记,不再抛错(以快照质量兜底)",
+  );
 
   const unlocked = scriptedClient([{ payload: { desktop_unlocked: true } }]);
   assert.equal(await assertDesktopUnlocked(unlocked.client), true);

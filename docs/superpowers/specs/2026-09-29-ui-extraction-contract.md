@@ -201,3 +201,14 @@ UI 输出形状:
 - **attach 会话名键(驱动+后端已接线,待真机验证下载按钮)**:`attach-fetch --name <候选人名>`(导航 /chat/im→会话行定位→点开→附件检出;三态与签名校验不变);后端 `attachFetch(account, imId, sessionName, outDir, timeout)`:UI 优先 --imId、无则 --name、两者皆空不猜测;legacy 无 im_id 空返回(守卫下沉);ChatPollService 已去硬跳过、传会话名;
 - 测试:驱动 113/113(+3: search/attach-name×2);后端 314/314(+5: search UI/legacy、attach UI-name/legacy-空返回、名键附件入库);
 - 真机待验:attach viewer 下载按钮、search 页面结构。
+
+### 环境与稳定性修复(2026-09-30 真机)
+- **daemon 重启必须带 grant**:`cua-driver serve --grant existing-profile`;否则 browser_prepare 以 consent 拒绝,
+  表现为 attach 失败→launchChrome 等待超时(排障要点:daemon 重启后必须沿用该启动参数);
+- **desktop_unlocked 假阴性(软化)**:系统唤醒后 driver 仍报 false,但桌面快照/窗口列表完整(Chrome is_on_screen=true);
+  assertDesktopUnlocked 改为软告警,以快照质量兜底;
+- **semantic_v2 快照间歇残缺(重大发现)**:/chat/im 等复杂页间歇只返回"导航壳"(21-23 文本行;query 0 命中、oopif=0、
+  UIA 窗口通道 not_observable_in_window_scope)。**缓解**:readPage 改为单快照(整个尝试只拍一次,双快照加剧退化)
+  +文本行阈值校验(MIN_PAGE_LINES=26)+about:blank 清场重试×6;单快照后真机首次尝试即可达 65 行(部分内容);
+- **已知限制**:左侧会话列表(虚拟滚动容器)仍可能不进语义树——chatlist records 可能为 0(待滚动/容器定位继续校准);
+- **会话行时间格式多样化**(HH:MM/昨天/前天/N天前/MM-DD),extractChatSessions 锚已放宽。

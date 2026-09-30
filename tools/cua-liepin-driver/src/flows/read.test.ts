@@ -8,7 +8,7 @@ import { DriverClient, type ToolCallResult } from "../cua/driver-client.js";
 import type { BrowserSession } from "../cua/session.js";
 import type { UiContext } from "../cua/ui-actions.js";
 import { extractJobRecords } from "../cua/extract.js";
-import { captureIdsByClickThrough, runReadChatMsg, runReadList, runReadSearch } from "./read-pages.js";
+import { captureIdsByClickThrough, readPage, runReadChatMsg, runReadList, runReadSearch } from "./read-pages.js";
 import { runReadResume } from "./read-resume.js";
 
 const RESUME_URL = "https://lpt.liepin.com/resume/detail?resIdEncode=r-1&sfrom=R_SEARCH_CONDITION";
@@ -91,6 +91,7 @@ function makeCtx(s: Scenario): UiContext {
       clock += ms;
     },
     now: () => clock,
+    minPageLines: 0, // 关闭内容充分性校验(专用用例单独开启)
   };
 }
 
@@ -232,23 +233,20 @@ test("runReadChatMsg --name 模式:会话未找到时报明确错误", async () 
 test("runReadChatMsg url 模式:附件卡片文案迹象检测", async () => {
   const s = new Scenario();
   const url = "https://lpt.liepin.com/chat?imId=abc";
-  s.nav()
-    .snap([{ name: "你好" }], url)
-    .snap([{ name: "你好" }, { name: "张三的简历.pdf" }, { name: "在吗" }], url);
+  s.nav().snap([{ name: "你好" }, { name: "张三的简历.pdf" }, { name: "在吗" }], url); // 单快照
 
   const outcome = await runReadChatMsg(makeCtx(s), { pageUrl: url, imId: "abc", dryRun: false });
 
   assert.equal(outcome.attachment_hint, true);
   assert.ok(outcome.steps.some((l) => l.includes("附件卡片")));
-  assert.deepEqual(s.tools(), ["browser_navigate", "get_browser_state", "get_browser_state"]);
+  assert.deepEqual(s.tools(), ["browser_navigate", "get_browser_state"]);
 });
 
 test("runReadList:autoCaptureRows 逐行穿透并把 job_id 合并进 records(joblist --with-ids)", async () => {
   const s = new Scenario();
   const row = { name: "销售经理", role: "link", actions: ["click"] };
   s.nav()
-    .snap([{ name: "职位名称" }]) // checkPageState
-    .snap([row]) // readPage 快照(行)
+    .snap([row]) // 单快照(行)
     .click() // 穿透点击
     .snap([{ name: "销售经理" }], "https://lpt.liepin.com/job/detail/preview?ejob_id=J9")
     .nav() // 回列表
@@ -286,8 +284,7 @@ test("runReadSearch:关键词拼 URL + records 复用候选人抽取(预实现,�
     { name: "15-20K" },
   ];
   s.nav()
-    .snap([{ name: "搜索" }]) // checkPageState
-    .snap(card); // readPage 快照
+    .snap(card); // 单快照
 
   const outcome = await runReadSearch(makeCtx(s), { keywords: "海外销售", captureRefs: [], dryRun: false });
 
@@ -300,4 +297,42 @@ test("runReadSearch:关键词拼 URL + records 复用候选人抽取(预实现,�
     outcome.steps.some((l) => l.includes("海外销售") && l.includes("URL 公式待真机校准")),
     "应带 URL 公式校准标记(关键词已编码)",
   );
+});
+
+test("readPage 语义残缺重试:首次壳(3行)→清场重导航后完整(30行)成功", async () => {
+  const s = new Scenario();
+  const shell = Array.from({ length: 3 }, (_, i) => ({ name: `壳${i}` }));
+  const full = Array.from({ length: 30 }, (_, i) => ({ name: `内容${i}` }));
+  // 每次尝试 = navigate + snap(单快照);中间清场 = navigate(about:blank)
+  s.nav().snap(shell).nav().nav().snap(full);
+
+  const ctx = { ...makeCtx(s), minPageLines: 26 };
+  const { lines } = await readPage(ctx, "https://lpt.liepin.com/chat/im");
+
+  assert.equal(lines.length, 30, "重试后应拿到完整文本");
+  assert.deepEqual(s.tools(), [
+    "browser_navigate",
+    "get_browser_state",
+    "browser_navigate", // about:blank 清场
+    "browser_navigate",
+    "get_browser_state",
+  ]);
+});
+
+test("readPage 持续残缺:清场重试 6 次后抛明确错误(不交付残缺数据)", async () => {
+  const s = new Scenario();
+  const shell = [{ name: "壳" }];
+  for (let i = 0; i < 6; i++) {
+    s.nav().snap(shell);
+    if (i < 5) {
+      s.nav(); // about:blank 清场
+    }
+  }
+
+  const ctx = { ...makeCtx(s), minPageLines: 26 };
+  await assert.rejects(
+    readPage(ctx, "https://lpt.liepin.com/chat/im"),
+    /页面内容不足\(文本行 1 < 26,已重试 6 次\)/,
+  );
+  assert.equal(s.tools().length, 17, "6 次尝试 × (navigate + 单快照) + 5 次清场导航");
 });

@@ -100,6 +100,7 @@ function makeCtx(s: Scenario, dryRun = false): UiContext {
       clock += ms;
     },
     now: () => clock,
+    minPageLines: 0, // 关闭内容充分性校验(专用用例单独开启)
   };
 }
 

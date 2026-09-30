@@ -264,8 +264,8 @@ export interface ChatSessionRecord {
   last_msg: string | null;
 }
 
-/** 时间行(会话行锚:HH:MM) */
-const CHAT_TIME_RE = /^\d{1,2}:\d{2}$/;
+/** 会话行时间锚(真机观察多种格式:HH:MM / 昨天 / 前天 / N天前 / MM-DD) */
+const CHAT_TIME_RE = /^(\d{1,2}:\d{2}|昨天|前天|\d+天前|\d{1,2}-\d{1,2})$/;
 
 /** 从 refs[from] 向前收集最多 max 个非空名称(span 限制搜索深度) */
 function backNames(refs: SnapshotRef[], from: number, max: number, span: number): string[] {

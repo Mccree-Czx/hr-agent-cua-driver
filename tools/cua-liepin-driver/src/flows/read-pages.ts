@@ -18,7 +18,7 @@ import {
   textLinesOf,
 } from "../cua/extract.js";
 import { clickRef, type SnapshotRef, type SnapshotResult } from "../cua/session.js";
-import { takeSnapshot, type UiContext } from "../cua/ui-actions.js";
+import { navigate, takeSnapshot, type UiContext } from "../cua/ui-actions.js";
 import { checkPageState, navigateChecked } from "./common.js";
 
 /** 点击穿透结果(卡片 → 详情 URL → ID 参数) */
@@ -42,20 +42,50 @@ export interface RawPageOutcome {
   steps: string[];
 }
 
-/** 打开页面并全文抽取(读操作;页面未就绪即抛错) */
+/**
+ * 页面残缺指纹阈值(2026-09-30 真机:semantic_v2 快照间歇性只返回"导航壳",
+ * 纯壳文本行约 21-23;正常应用页 ≥ 40)。低于阈值时清场重试。
+ */
+export const MIN_PAGE_LINES = 26;
+
+/** 残缺重试上限(每次重试=about:blank 清场→重新导航→快照) */
+export const PAGE_RETRY_ATTEMPTS = 6;
+
+/**
+ * 打开页面并全文抽取(读操作)。
+ * 2026-09-30 增内容充分性校验:文本行低于 {@link MIN_PAGE_LINES} 视为语义快照残缺;重试时
+ * 先导航 about:blank(清场,重置渲染/快照状态)再回目标页——真机实测纯重试恢复率低、清场后逐步恢复;
+ * 仍不足则抛错(不向下游交付残缺数据)。
+ */
 export async function readPage(
   ctx: UiContext,
   url: string,
   settleMs = 3000,
 ): Promise<{ snap: SnapshotResult; lines: string[] }> {
-  await navigateChecked(ctx, url, settleMs);
-  const snap = await takeSnapshot(ctx);
-  checkPageState(snap);
-  const lines = textLinesOf(snap);
-  if (lines.length === 0) {
-    throw new CuaError("failed", `页面无可见文本(${snap.page.url});可能仍在加载或页面结构变化`);
+  let last = 0;
+  const minLines = ctx.minPageLines ?? MIN_PAGE_LINES;
+  for (let attempt = 1; attempt <= PAGE_RETRY_ATTEMPTS; attempt++) {
+    // 单快照策略(2026-09-30 真机):整个尝试只拍一次快照(checkPageState 与抽取共用),
+    // 双快照会加剧 semantic_v2 的"先全后残"退化
+    await navigate(ctx, url, settleMs);
+    const snap = await takeSnapshot(ctx);
+    checkPageState(snap);
+    const lines = textLinesOf(snap);
+    if (lines.length >= minLines) {
+      return { snap, lines };
+    }
+    last = lines.length;
+    ctx.log(`文本行仅 ${lines.length}(疑似语义快照残缺),清场重试 ${attempt}/${PAGE_RETRY_ATTEMPTS}`);
+    if (attempt < PAGE_RETRY_ATTEMPTS) {
+      await navigate(ctx, "about:blank", 800);
+      await ctx.sleep(1_800);
+    }
   }
-  return { snap, lines };
+  throw new CuaError(
+    "failed",
+    `页面内容不足(文本行 ${last} < ${minLines},已重试 ${PAGE_RETRY_ATTEMPTS} 次): ${url};` +
+      "可能仍在加载或语义快照持续残缺,请查 cua-driver daemon 状态",
+  );
 }
 
 /**

@@ -19,6 +19,8 @@ export interface UiContext {
   sleep: (ms: number) => Promise<void>;
   /** 时钟接缝:测试注入虚拟时钟,避免真实等待超时 */
   now?: () => number;
+  /** readPage 内容充分性阈值覆盖(测试用 0 关闭校验;缺省 MIN_PAGE_LINES) */
+  minPageLines?: number;
 }
 
 /** 元素匹配器:names 按序优先(包含匹配);roles/actions 为限定;excludeNames 排除 */

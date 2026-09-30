@@ -22,9 +22,9 @@ import {
   validateResumeFile,
   waitForNewFile,
 } from "../cua/download.js";
-import { takeSnapshot, type UiContext } from "../cua/ui-actions.js";
+import { navigate, takeSnapshot, type UiContext } from "../cua/ui-actions.js";
 import { checkPageState, navigateChecked } from "./common.js";
-import { findConversationRow } from "./read-pages.js";
+import { findConversationRow, PAGE_RETRY_ATTEMPTS } from "./read-pages.js";
 
 export interface AttachOutcome {
   found: boolean;
@@ -77,15 +77,27 @@ export async function runAttachCore(ctx: UiContext, input: AttachInput): Promise
   };
 
   if (input.name !== undefined && input.name !== "") {
-    // UI 会话名键模式(2026-09-30):导航会话页 → 按名点开会话 → 再检出附件
-    const listUrl = input.pageUrl !== undefined && input.pageUrl !== ""
-      ? input.pageUrl
-      : "https://lpt.liepin.com/chat/im";
-    await navigateChecked(ctx, listUrl);
-    const listSnap = await takeSnapshot(ctx);
-    const row = findConversationRow(listSnap.refs, input.name);
+    // UI 会话名键模式(2026-09-30):导航会话页 → 按名点开会话 → 再检出附件;
+    // 语义快照可能间歇性残缺(会话行缺失),重导航重试
+    const listUrl =
+      input.pageUrl !== undefined && input.pageUrl !== ""
+        ? input.pageUrl
+        : "https://lpt.liepin.com/chat/im";
+    let row: ReturnType<typeof findConversationRow> = null;
+    for (let attempt = 1; attempt <= PAGE_RETRY_ATTEMPTS; attempt++) {
+      await navigateChecked(ctx, listUrl);
+      row = findConversationRow((await takeSnapshot(ctx)).refs, input.name);
+      if (row !== null) {
+        break;
+      }
+      note(`会话行未找到(疑似语义快照残缺),清场重试 ${attempt}/${PAGE_RETRY_ATTEMPTS}`);
+      if (attempt < PAGE_RETRY_ATTEMPTS) {
+        await navigate(ctx, "about:blank", 800);
+        await ctx.sleep(1_800);
+      }
+    }
     if (row === null) {
-      throw new CuaError("failed", `会话列表中未找到「${input.name}」(附件检出按名定位失败)`);
+      throw new CuaError("failed", `会话列表中未找到「${input.name}」(附件检出按名定位失败,已重试 ${PAGE_RETRY_ATTEMPTS} 次)`);
     }
     note(`会话行 ${row.ref}「${row.name ?? ""}」`);
     if (!input.dryRun) {
